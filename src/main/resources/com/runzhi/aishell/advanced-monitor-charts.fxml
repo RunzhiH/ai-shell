@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.chart.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<VBox xmlns="http://javafx.com/javafx/17.0.2-ea" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.AdvancedMonitorChartsController"
+      spacing="20.0" styleClass="advanced-charts-panel">
+    
+    <VBox spacing="4"><Label text="资源分析" styleClass="page-title"/><Label text="查看系统资源与进程分布" styleClass="page-description"/></VBox>
+    <!-- 资源分布饼图 -->
+    <TitledPane text="系统资源分布" expanded="true" VBox.vgrow="ALWAYS">
+        <PieChart fx:id="resourcePieChart" prefHeight="300.0" prefWidth="400.0"/>
+    </TitledPane>
+    
+    <!-- 进程类型分布饼图 -->
+    <TitledPane text="进程类型分布" expanded="false" VBox.vgrow="ALWAYS">
+        <PieChart fx:id="processTypePieChart" prefHeight="300.0" prefWidth="400.0"/>
+    </TitledPane>
+    
+</VBox>

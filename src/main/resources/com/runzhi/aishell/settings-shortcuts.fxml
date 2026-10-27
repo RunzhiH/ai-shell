@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<?import javafx.scene.control.cell.PropertyValueFactory?>
+<?import javafx.collections.FXCollections?>
+<?import java.lang.String?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.SettingsShortcutsController"
+      spacing="20" styleClass="settings-page">
+    
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+    
+    <!-- 快捷键搜索 -->
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="搜索快捷键:" styleClass="text-secondary"/>
+        <TextField fx:id="searchField" promptText="输入快捷键名称或功能..." prefWidth="300"
+                   onAction="#handleSearch"/>
+        <Button text="搜索" onAction="#handleSearch" styleClass="secondary-button"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="重置所有" onAction="#handleResetAll" styleClass="danger-button"/>
+    </HBox>
+    
+    <!-- 快捷键列表 -->
+    <TitledPane text="快捷键配置" expanded="true" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 快捷键表格 -->
+            <TableView fx:id="shortcutsTable" prefHeight="400">
+                <columns>
+                    <TableColumn fx:id="colCategory" text="分类" prefWidth="100">
+                        <cellValueFactory>
+                            <PropertyValueFactory property="category"/>
+                        </cellValueFactory>
+                    </TableColumn>
+                    <TableColumn fx:id="colFunction" text="功能" prefWidth="200">
+                        <cellValueFactory>
+                            <PropertyValueFactory property="function"/>
+                        </cellValueFactory>
+                    </TableColumn>
+                    <TableColumn fx:id="colShortcut" text="快捷键" prefWidth="200">
+                        <cellValueFactory>
+                            <PropertyValueFactory property="shortcut"/>
+                        </cellValueFactory>
+                    </TableColumn>
+                    <TableColumn fx:id="colConflict" text="冲突" prefWidth="80">
+                        <cellValueFactory>
+                            <PropertyValueFactory property="conflict"/>
+                        </cellValueFactory>
+                    </TableColumn>
+                </columns>
+            </TableView>
+            
+            <!-- 操作按钮 -->
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Button text="⌨️ 编辑快捷键" onAction="#handleEditShortcut" styleClass="primary-button"/>
+                <Button text="清除快捷键" onAction="#handleClearShortcut" styleClass="danger-button"/>
+                <Button text="↩️ 恢复默认" onAction="#handleRestoreDefault" styleClass="secondary-button"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="statusLabel" styleClass="text-info"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 快捷键说明 -->
+    <TitledPane text="使用说明" expanded="false" styleClass="settings-section">
+        <VBox spacing="10">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <Label text="• 双击快捷键单元格可编辑快捷键" wrapText="true" styleClass="text-secondary"/>
+            <Label text="• 按 Backspace 或 Delete 可清除快捷键" wrapText="true" styleClass="text-secondary"/>
+            <Label text="• 红色标记表示快捷键冲突" wrapText="true" styleClass="text-secondary"/>
+            <Label text="• Ctrl + 字母 = Ctrl+ 字母" wrapText="true" styleClass="text-secondary"/>
+            <Label text="• Alt + 字母 = Alt+ 字母" wrapText="true" styleClass="text-secondary"/>
+            <Label text="• Shift + 字母 = Shift+ 字母" wrapText="true" styleClass="text-secondary"/>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 预设方案 -->
+    <TitledPane text="预设方案" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="选择预设:" prefWidth="100"/>
+                <ComboBox fx:id="presetCombo" prefWidth="200">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="Windows 风格"/>
+                            <String fx:value="macOS 风格"/>
+                            <String fx:value="Linux 风格"/>
+                            <String fx:value="VS Code 风格"/>
+                            <String fx:value="IntelliJ IDEA 风格"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+                <Button text="应用预设" onAction="#handleApplyPreset" styleClass="button-success"/>
+            </HBox>
+            
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Button text="导出快捷键" onAction="#handleExportShortcuts" styleClass="secondary-button"/>
+                <Button text="导入快捷键" onAction="#handleImportShortcuts" styleClass="secondary-button"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+</VBox>

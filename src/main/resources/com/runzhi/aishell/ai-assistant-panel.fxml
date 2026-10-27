@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ChoiceBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Tooltip?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.TextFlow?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.AIAssistantPanelController"
+      styleClass="ai-assistant-panel"
+      prefHeight="600.0" prefWidth="800.0">
+    <padding>
+        <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
+    </padding>
+    
+    <TextFlow fx:id="terminalOutput" VBox.vgrow="ALWAYS" styleClass="assistant-output">
+        <VBox.margin>
+            <Insets bottom="10.0"/>
+        </VBox.margin>
+    </TextFlow>
+
+    <!-- 当前模型显示行：供应商 + 模型，可就地切换 -->
+    <HBox spacing="10.0" alignment="CENTER_LEFT" styleClass="model-switcher-bar">
+        <Label text="供应商:" styleClass="model-switcher-label"/>
+        <ChoiceBox fx:id="providerChoice" onAction="#switchProvider" styleClass="model-switcher-choice"/>
+        <Label text="模型:" styleClass="model-switcher-label"/>
+        <ChoiceBox fx:id="modelChoice" onAction="#switchModel" HBox.hgrow="ALWAYS"
+                   styleClass="model-switcher-choice"/>
+        <Button text="刷新" onAction="#refreshModelList" styleClass="secondary-button" mnemonicParsing="false">
+            <tooltip><Tooltip text="重新载入供应商与模型列表"/></tooltip>
+        </Button>
+    </HBox>
+
+    <HBox spacing="10.0" styleClass="assistant-input-area">
+        <TextField fx:id="commandInput" onAction="#handleCommandInput" HBox.hgrow="ALWAYS" styleClass="text-field">
+            <promptText>输入自然语言或命令，AI将智能响应，试试打个招呼吧</promptText>
+        </TextField>
+        <Button text="AI配置" onAction="#openAIConfiguration" styleClass="ai-config-button" />
+        <Button fx:id="cancelRequestButton" text="停止" onAction="#cancelRequest"
+                visible="false" managed="false" styleClass="secondary-button" />
+        <Button text="清空对话" onAction="#clearChat" styleClass="clear-chat-button" />
+    </HBox>
+</VBox>

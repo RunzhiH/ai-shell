@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns="http://javafx.com/javafx/17.0.2-ea" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.BookmarkPanelController"
+      prefHeight="600.0" prefWidth="800.0"
+      styleClass="bookmark-panel">
+    
+    <VBox spacing="4" styleClass="page-heading"><Label text="命令书签" styleClass="page-title"/><Label text="收藏常用命令，按分类查找和复用" styleClass="page-description"/></VBox>
+    <!-- 工具栏 -->
+    <HBox spacing="10.0" styleClass="toolbar">
+        <padding>
+            <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
+        </padding>
+        
+        <!-- 搜索框 -->
+        <TextField fx:id="searchField" promptText="搜索书签..." HBox.hgrow="ALWAYS">
+            <HBox.margin>
+                <Insets right="10.0"/>
+            </HBox.margin>
+        </TextField>
+        
+        <!-- 添加书签按钮 -->
+        <Button fx:id="addBookmarkButton" text="添加书签" onAction="#handleAddBookmark" styleClass="primary-button"/>
+        
+        <!-- 添加模板按钮 -->
+        <Button fx:id="addTemplateButton" text="模板" onAction="#handleAddTemplate"/>
+        
+        <!-- 刷新按钮 -->
+        <Button fx:id="refreshButton" text="刷新" onAction="#handleRefresh"/>
+    </HBox>
+    
+    <!-- 主内容区 - 左右分栏 -->
+    <SplitPane dividerPositions="0.5" VBox.vgrow="ALWAYS">
+        
+        <!-- 左侧：书签列表 -->
+        <VBox spacing="10.0">
+            <padding>
+                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
+            </padding>
+            
+            <Label text="命令书签" styleClass="section-title"/>
+            
+            <!-- 分类选择器 -->
+            <ComboBox fx:id="categoryComboBox" promptText="所有分类" maxWidth="Infinity"/>
+            
+            <!-- 书签表格 -->
+            <TableView fx:id="bookmarkTable" VBox.vgrow="ALWAYS">
+                <columns>
+                    <TableColumn fx:id="bookmarkNameColumn" text="名称" prefWidth="150.0"/>
+                    <TableColumn fx:id="bookmarkCategoryColumn" text="分类" prefWidth="100.0"/>
+                    <TableColumn fx:id="bookmarkUsageColumn" text="使用次数" prefWidth="80.0"/>
+                </columns>
+                <contextMenu>
+                    <ContextMenu>
+                        <items>
+                            <MenuItem text="执行" onAction="#handleExecuteBookmark"/>
+                            <MenuItem text="编辑" onAction="#handleEditBookmark"/>
+                            <MenuItem text="删除" onAction="#handleDeleteBookmark"/>
+                            <SeparatorMenuItem/>
+                            <MenuItem text="复制命令" onAction="#handleCopyCommand"/>
+                        </items>
+                    </ContextMenu>
+                </contextMenu>
+            </TableView>
+            
+            <!-- 书签详情 -->
+            <TitledPane fx:id="bookmarkDetailPane" text="书签详情" expanded="false" VBox.vgrow="NEVER">
+                <VBox spacing="8.0">
+                    <TextField fx:id="detailNameField" promptText="名称" editable="false"/>
+                    <TextArea fx:id="detailCommandArea" promptText="命令" editable="false" prefRowCount="3"/>
+                    <TextField fx:id="detailDescriptionField" promptText="描述" editable="false"/>
+                    <HBox spacing="5.0">
+                        <Label text="分类:"/>
+                        <Label fx:id="detailCategoryLabel" styleClass="info-label"/>
+                    </HBox>
+                </VBox>
+            </TitledPane>
+        </VBox>
+        
+        <!-- 右侧：命令模板 -->
+        <VBox spacing="10.0">
+            <padding>
+                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
+            </padding>
+            
+            <Label text="命令模板" styleClass="section-title"/>
+            
+            <!-- 模板分类 -->
+            <ComboBox fx:id="templateCategoryComboBox" promptText="所有分类" maxWidth="Infinity"/>
+            
+            <!-- 模板列表 -->
+            <ListView fx:id="templateList" VBox.vgrow="ALWAYS"/>
+            
+            <!-- 模板详情和参数输入 -->
+            <TitledPane fx:id="templateDetailPane" text="模板详情" expanded="false" VBox.vgrow="NEVER">
+                <VBox spacing="8.0">
+                    <TextField fx:id="templateNameField" promptText="模板名称" editable="false"/>
+                    
+                    <!-- 动态参数输入区域 -->
+                    <VBox fx:id="templateParametersBox" spacing="5.0"/>
+                    
+                    <!-- 生成的命令预览 -->
+                    <Label text="命令预览:" styleClass="label-bold"/>
+                    <TextArea fx:id="commandPreviewArea" editable="false" prefRowCount="3" 
+                              styleClass="code-preview"/>
+                    
+                    <!-- 操作按钮 -->
+                    <HBox spacing="10.0">
+                        <Button fx:id="executeTemplateButton" text="▶️ 执行" 
+                                onAction="#handleExecuteTemplate" defaultButton="true"/>
+                        <Button fx:id="copyTemplateButton" text="复制" 
+                                onAction="#handleCopyTemplate"/>
+                        <Button fx:id="editTemplateButton" text="编辑" 
+                                onAction="#handleEditTemplate"/>
+                    </HBox>
+                </VBox>
+            </TitledPane>
+        </VBox>
+        
+    </SplitPane>
+    
+    <!-- 状态栏 -->
+    <HBox spacing="10.0" styleClass="status-bar">
+        <padding>
+            <Insets bottom="5.0" left="10.0" right="10.0" top="5.0"/>
+        </padding>
+        
+        <Label fx:id="statusLabel" text="就绪"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label text="书签:"/>
+        <Label fx:id="bookmarkCountLabel" text="0" styleClass="info-label"/>
+        <Label text="| 模板:"/>
+        <Label fx:id="templateCountLabel" text="0" styleClass="info-label"/>
+    </HBox>
+    
+</VBox>

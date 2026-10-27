@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.collections.FXCollections?>
+<?import java.lang.String?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.SettingsAIController"
+      spacing="20" styleClass="settings-page">
+    
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+    
+    <!-- AI 模型配置 -->
+    <TitledPane text="AI 模型配置" expanded="true" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="已保存配置:" prefWidth="120"/>
+                <ComboBox fx:id="configProfileCombo" prefWidth="300" editable="true"
+                          promptText="选择配置，或输入新配置名称"/>
+            </HBox>
+            
+            <!-- API 提供商 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="API 提供商:" prefWidth="120"/>
+                <ComboBox fx:id="providerCombo" prefWidth="300">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="OpenAI"/>
+                            <String fx:value="Anthropic"/>
+                            <String fx:value="阿里云"/>
+                            <String fx:value="百度智能云"/>
+                            <String fx:value="Gemini"/>
+                            <String fx:value="Ollama"/>
+                            <String fx:value="DeepSeek"/>
+                            <String fx:value="Moonshot"/>
+                            <String fx:value="Mistral"/>
+                            <String fx:value="智谱AI"/>
+                            <String fx:value="自定义端点"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+            </HBox>
+            
+            <!-- API 端点 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="Base URL:" prefWidth="120"/>
+                <TextField fx:id="apiEndpointField" promptText="https://api.openai.com/v1" prefWidth="300"/>
+            </HBox>
+
+            <!-- API Key -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="API Key:" prefWidth="120"/>
+                <PasswordField fx:id="apiKeyField" prefWidth="300"/>
+                <Button fx:id="testConnectionButton" text="测试连接" onAction="#handleTestConnection" styleClass="secondary-button"/>
+            </HBox>
+
+            <!-- 模型选择 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="模型:" prefWidth="120"/>
+                <ComboBox fx:id="modelCombo" prefWidth="300" editable="true"/>
+                <Button fx:id="fetchModelsButton" text="获取模型" onAction="#handleFetchModels"
+                        styleClass="secondary-button"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 对话设置 -->
+    <TitledPane text="对话设置" expanded="true" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 温度参数 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="温度:" prefWidth="120"/>
+                <Slider fx:id="temperatureSlider" 
+                        min="0" max="2" majorTickUnit="0.5" minorTickCount="5"
+                        showTickLabels="true" showTickMarks="true"
+                        prefWidth="200"/>
+                <Label fx:id="temperatureValue" text="0.7" prefWidth="40"/>
+            </HBox>
+            
+            <!-- 最大令牌数 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="最大令牌数:" prefWidth="120"/>
+                <Spinner fx:id="maxTokensSpinner" 
+                         min="100" max="8000" initialValue="2048"
+                         amountToStepBy="100"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 上下文长度 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="上下文长度:" prefWidth="120"/>
+                <Spinner fx:id="contextLengthSpinner" 
+                         min="1" max="20" initialValue="5"
+                         amountToStepBy="1"
+                         prefWidth="200"
+                         editable="true"/>
+                <Label text="(条对话)" styleClass="text-secondary"/>
+            </HBox>
+            
+            <!-- 流式响应 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="streamingCheck" text="启用流式响应" selected="true"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 命令生成设置 -->
+    <TitledPane text="命令生成设置" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 默认 Shell -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="默认 Shell:" prefWidth="120"/>
+                <ComboBox fx:id="shellTypeCombo" prefWidth="200">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="Bash"/>
+                            <String fx:value="Zsh"/>
+                            <String fx:value="PowerShell"/>
+                            <String fx:value="CMD"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+            </HBox>
+            
+            <!-- 操作系统类型 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="目标系统:" prefWidth="120"/>
+                <ComboBox fx:id="osTypeCombo" prefWidth="200">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="Linux"/>
+                            <String fx:value="macOS"/>
+                            <String fx:value="Windows"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+            </HBox>
+            
+            <!-- 自动解释命令 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="autoExplainCheck" text="自动生成命令解释" selected="true"/>
+            </HBox>
+            
+            <!-- 安全确认 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="safetyConfirmCheck" text="危险命令前确认" selected="true"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 高级设置 -->
+    <TitledPane text="高级设置" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 请求超时 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="请求超时 (秒):" prefWidth="120"/>
+                <Spinner fx:id="timeoutSpinner" 
+                         min="10" max="300" initialValue="60"
+                         amountToStepBy="10"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 重试次数 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="失败重试次数:" prefWidth="120"/>
+                <Spinner fx:id="retryCountSpinner" 
+                         min="0" max="5" initialValue="2"
+                         amountToStepBy="1"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 使用代理 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="useProxyCheck" text="通过代理访问 API"/>
+            </HBox>
+            
+            <!-- 日志记录 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="logRequestsCheck" text="记录 API 请求和响应"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+</VBox>

@@ -1,0 +1,57 @@
+/* ============================================================
+   AIShell Design Tokens — Dark (V1 默认)
+   参考：《AIShell UI 优化方案 V1》§22-24
+   与 theme-components.css 搭配加载
+   ============================================================ */
+.root {
+    -fx-app-bg:           #0D1117;
+    -fx-panel-bg:         #161B22;
+    -fx-elevated-bg:      #21262D;
+    -fx-hover-bg:         #292E36;
+    -fx-sidebar-bg:       #161B22;
+
+    -fx-border-default:   #30363D;
+    -fx-border-strong:    #484F58;
+
+    -fx-text-primary:     #E6EDF3;
+    -fx-text-secondary:   #8B949E;
+    -fx-text-disabled:    #6E7681;
+    -fx-text-inverse:     #0D1117;
+
+    -fx-primary-color:    #58A6FF;
+    -fx-primary-hover:    #79C0FF;
+    -fx-ai-color:         #A371F7;
+    -fx-success-color:    #3FB950;
+    -fx-warning-color:    #D29922;
+    -fx-danger-color:     #F85149;
+    -fx-info-color:       #58A6FF;
+
+    /* 兼容旧变量名 */
+    -fx-accent-color:     #58A6FF;
+    -fx-secondary-color:  #79C0FF;
+    -fx-content-bg:       #161B22;
+    -fx-light-bg:         #21262D;
+    -fx-dark-bg:          #0D1117;
+    -fx-border-color:     #30363D;
+    -fx-hover-color:      #292E36;
+    -fx-selected-color:   #1F6FEB;
+
+    -fx-ui-font: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-mono-font: "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New", monospace;
+
+    /* JavaFX CSS 自定义属性不能直接用于 -fx-border-radius（需数字/px） */
+    -fx-radius-sm: 4px;
+    -fx-radius-md: 6px;
+
+    -fx-code-bg: #0D1117;
+}
+
+.root, .root * {
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.root {
+    -fx-background-color: -fx-app-bg;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}

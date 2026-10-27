@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.chart.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.MonitorPanelController" styleClass="monitor-panel">
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <VBox spacing="4"><Label text="主机监控" styleClass="page-title"/><Label text="当前连接的资源使用情况与趋势" styleClass="page-description"/></VBox>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="refreshBtn" text="刷新数据" onAction="#refreshMonitoring" styleClass="secondary-button"/>
+    </HBox>
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" VBox.vgrow="ALWAYS">
+        <VBox spacing="20">
+            <TilePane hgap="16" vgap="16" prefColumns="3" prefTileWidth="260" prefTileHeight="140">
+<VBox spacing="16" styleClass="metric-card"><Label text="CPU 使用率" styleClass="text-secondary"/><Label fx:id="cpuPercentLabel" text="—" styleClass="metric-value"/><ProgressBar fx:id="cpuProgress" progress="0" maxWidth="Infinity"/></VBox>
+<VBox spacing="16" styleClass="metric-card"><Label text="内存使用率" styleClass="text-secondary"/><Label fx:id="memoryPercentLabel" text="—" styleClass="metric-value"/><ProgressBar fx:id="memoryProgress" progress="0" maxWidth="Infinity"/></VBox>
+<VBox spacing="16" styleClass="metric-card"><Label text="磁盘使用率" styleClass="text-secondary"/><Label fx:id="diskPercentLabel" text="—" styleClass="metric-value"/><ProgressBar fx:id="diskProgress" progress="0" maxWidth="Infinity"/></VBox>
+<VBox spacing="16" styleClass="metric-card"><Label text="系统负载" styleClass="text-secondary"/><Label fx:id="loadLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
+<VBox spacing="16" styleClass="metric-card"><Label text="网络上传" styleClass="text-secondary"/><Label fx:id="netUpLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
+<VBox spacing="16" styleClass="metric-card"><Label text="网络下载" styleClass="text-secondary"/><Label fx:id="netDownLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
+<VBox spacing="16" styleClass="metric-card"><Label text="网络连接" styleClass="text-secondary"/><Label fx:id="connectionsLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
+</TilePane>
+<TitledPane text="详细监控" collapsible="true" expanded="false" VBox.vgrow="ALWAYS" styleClass="detailed-monitor">
+            <content>
+                <VBox spacing="10" styleClass="chart-container">
+                    <children>
+                        <!-- CPU图表 -->
+                        <VBox spacing="5">
+                            <children>
+                                <Label text="CPU使用率趋势" styleClass="chart-title" />
+                                <LineChart fx:id="cpuChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
+                                    <xAxis>
+                                        <NumberAxis fx:id="cpuXAxis" label="时间" tickLabelsVisible="false"
+                                                    minorTickVisible="false"/>
+                                    </xAxis>
+                                    <yAxis>
+                                        <NumberAxis fx:id="cpuYAxis" label="百分比" upperBound="100"/>
+                                    </yAxis>
+                                </LineChart>
+                            </children>
+                        </VBox>
+
+                        <!-- 内存图表 -->
+                        <VBox spacing="5">
+                            <children>
+                                <Label text="内存使用率趋势" styleClass="chart-title" />
+                                <LineChart fx:id="memoryChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
+                                    <xAxis>
+                                        <NumberAxis fx:id="memoryXAxis" label="时间" tickLabelsVisible="false"
+                                                    minorTickVisible="false"/>
+                                    </xAxis>
+                                    <yAxis>
+                                        <NumberAxis fx:id="memoryYAxis" label="百分比" upperBound="100"/>
+                                    </yAxis>
+                                </LineChart>
+                            </children>
+                        </VBox>
+
+                        <!-- 磁盘图表 -->
+                        <VBox spacing="5">
+                            <children>
+                                <Label text="磁盘使用率趋势" styleClass="chart-title" />
+                                <LineChart fx:id="diskChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
+                                    <xAxis>
+                                        <NumberAxis fx:id="diskXAxis" label="时间" tickLabelsVisible="false"
+                                                    minorTickVisible="false"/>
+                                    </xAxis>
+                                    <yAxis>
+                                        <NumberAxis fx:id="diskYAxis" label="百分比" upperBound="100"/>
+                                    </yAxis>
+                                </LineChart>
+                            </children>
+                        </VBox>
+
+                        <!-- 网络图表 -->
+                        <VBox spacing="5">
+                            <children>
+                                <Label text="网络流量趋势" styleClass="chart-title" />
+                                <LineChart fx:id="networkChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
+                                    <xAxis>
+                                        <NumberAxis fx:id="networkXAxis" label="时间" tickLabelsVisible="false"
+                                                    minorTickVisible="false"/>
+                                    </xAxis>
+                                    <yAxis>
+                                        <NumberAxis fx:id="networkYAxis" label="KB/s" upperBound="1000"/>
+                                    </yAxis>
+                                </LineChart>
+                            </children>
+                        </VBox>
+                    </children>
+                </VBox>
+            </content>
+        </TitledPane>
+</VBox></ScrollPane></VBox>

@@ -1,0 +1,630 @@
+/* ============================================================
+   AIShell Theme Components (UI 优化方案 V1)
+   所有组件只使用 .root 中的 Design Tokens，不写死颜色。
+   ============================================================ */
+
+/* ---------- Base ---------- */
+.root {
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.label {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+/* ---------- Buttons: Primary / Secondary / Ghost ---------- */
+.button, .primary-button, .secondary-button, .toolbar-button,
+.command-button, .nav-button, .ip-button, .ai-command-btn,
+.ai-command-btn-danger, .status-item, .mode-btn, .drawer-header,
+.new-tab-button, .upgrade-button, .connect-button {
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+/* 默认 = Ghost */
+.button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-padding: 6 12;
+    -fx-font-size: 13px;
+}
+
+.button:hover {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.button:pressed {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.button:disabled {
+    -fx-opacity: 0.45;
+}
+
+/* Primary */
+.primary-button, .button.primary, .command-button, .new-tab-button {
+    -fx-background-color: -fx-primary-color;
+    -fx-text-fill: -fx-text-inverse;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent;
+}
+
+.primary-button:hover, .button.primary:hover,
+.command-button:hover, .new-tab-button:hover {
+    -fx-background-color: -fx-primary-hover;
+}
+
+/* Secondary */
+.secondary-button, .toolbar-button {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: -fx-border-default;
+}
+
+.secondary-button:hover, .toolbar-button:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+/* Ghost / Nav */
+.nav-button, .ai-command-btn, .upgrade-button, .status-item {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-border-color: transparent;
+}
+
+.nav-button:hover, .ai-command-btn:hover, .upgrade-button:hover,
+.status-item:hover {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.nav-button:selected, .nav-button:armed {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-primary-color;
+}
+
+/* ---------- Inputs ---------- */
+.text-field, .text-area, .combo-box, .choice-box, .password-field,
+.search-field, .path-field, .model-switcher-choice {
+    -fx-background-color: -fx-code-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-prompt-text-fill: -fx-text-disabled;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 5 8;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+.text-field:focused, .text-area:focused, .combo-box:focused,
+.choice-box:focused {
+    -fx-border-color: -fx-primary-color;
+}
+
+.combo-box > .list-cell, .choice-box > .label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- Tables / Lists ---------- */
+.table-view, .list-view {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+}
+
+.table-view .column-header-background, .list-view .virtual-flow {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.table-view .column-header, .list-view .list-cell {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-border-color: transparent;
+}
+
+.table-row-cell, .list-cell {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+    -fx-font-size: 12px;
+}
+
+.table-row-cell:selected, .list-cell:selected {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.table-row-cell:hover, .list-cell:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+/* ---------- Tabs ---------- */
+.tab-pane > .tab-header-area {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 6 12;
+}
+
+.tab:selected {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -fx-primary-color transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: -fx-primary-color;
+}
+
+.tab .tab-label {
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.tab:hover .tab-label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- Menus / Context ---------- */
+.context-menu {
+    -fx-background-color: -fx-panel-bg !important;
+    -fx-border-color: -fx-border-default;
+    -fx-background-radius: 6;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0, 0, 2);
+}
+
+.context-menu .menu-item {
+    -fx-background-color: transparent !important;
+    -fx-padding: 8 12;
+}
+
+.context-menu .menu-item:hover {
+    -fx-background-color: -fx-hover-bg !important;
+}
+
+.context-menu .menu-item > .label {
+    -fx-text-fill: -fx-text-primary !important;
+    -fx-font-size: 13px;
+}
+
+.context-menu .separator {
+    -fx-background-color: -fx-border-default;
+    -fx-padding: 1 0;
+}
+
+.menu-bar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+}
+
+.menu-bar .menu {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-padding: 5 10;
+}
+
+.menu-bar .menu:hover, .menu-bar .menu:showing {
+    -fx-background-color: -fx-elevated-bg;
+}
+
+/* ---------- Scrollbars ---------- */
+.scroll-bar {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: -fx-border-strong;
+    -fx-background-radius: 3;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: -fx-text-disabled;
+}
+
+.scroll-bar .increment-button, .scroll-bar .decrement-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+.scroll-bar .increment-arrow, .scroll-bar .decrement-arrow {
+    -fx-shape: "";
+    -fx-padding: 0;
+}
+
+/* ---------- SplitPane / Separator ---------- */
+.split-pane {
+    -fx-background-color: -fx-app-bg;
+}
+
+.split-pane:vertical > .split-pane-divider, .split-pane:horizontal > .split-pane-divider {
+    -fx-background-color: -fx-border-default;
+}
+
+.separator {
+    -fx-background-color: -fx-border-default;
+    -fx-padding: 1 0;
+}
+
+.separator:horizontal .line {
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ============================================================
+   主窗口 V1 布局
+   ============================================================ */
+.main-view {
+    -fx-background-color: -fx-app-bg;
+}
+
+.topbar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-padding: 0 12;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-min-height: 40;
+}
+
+.brand-name {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.brand-tag {
+    -fx-text-fill: -fx-text-disabled;
+    -fx-font-size: 10px;
+    -fx-padding: 1 6;
+    -fx-border-color: -fx-border-default;
+    -fx-background-radius: 2;
+    -fx-border-radius: 2;
+}
+
+.top-nav .nav-item {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 5 10;
+}
+
+.top-nav .nav-item:hover {
+    -fx-background-color: -fx-hover-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.top-nav .nav-item.active {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-primary-color;
+}
+
+.current-host {
+    -fx-background-color: transparent;
+}
+
+.current-host-label {
+    -fx-text-fill: -fx-text-disabled;
+    -fx-font-size: 11px;
+}
+
+.current-host-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-family: -fx-mono-font;
+    -fx-font-size: 12px;
+}
+
+.server-panel {
+    -fx-background-color: -fx-sidebar-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 1 0 0;
+}
+
+.ai-panel {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 0 1;
+}
+
+.panel-head {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 12;
+    -fx-min-height: 36;
+}
+
+.panel-title {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.ai-title {
+    -fx-text-fill: -fx-ai-color;
+    -fx-font-size: 13px;
+}
+
+.server-card {
+    -fx-background-color: transparent;
+    -fx-background-radius: -fx-radius-sm;
+    -fx-border-color: transparent;
+}
+
+.server-card:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.server-card.active {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-border-color: -fx-border-default;
+}
+
+.status-bar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 28;
+    -fx-padding: 0 12;
+}
+
+.status-bar .status-label {
+    -fx-text-fill: -fx-text-disabled;
+    -fx-font-size: 11px;
+}
+
+.status-bar .status-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-family: -fx-mono-font;
+    -fx-font-size: 11px;
+}
+
+.status-ok { -fx-text-fill: -fx-success-color; }
+.status-warn { -fx-text-fill: -fx-warning-color; }
+.status-ai { -fx-text-fill: -fx-ai-color; }
+
+/* ============================================================
+   Terminal
+   ============================================================ */
+.terminal-panel {
+    -fx-background-color: -fx-app-bg;
+}
+
+.terminal-toolbar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4 8;
+}
+
+.terminal-toolbar .toolbar-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+.terminal-tab-pane {
+    -fx-background-color: -fx-app-bg;
+}
+
+.terminal-output, .terminal-output .content {
+    -fx-background-color: -fx-code-bg;
+}
+
+.connection-info-label {
+    -fx-font-family: -fx-mono-font;
+    -fx-font-size: 12px;
+}
+
+.command-input {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ============================================================
+   SFTP Drawer
+   ============================================================ */
+.terminal-drawer-container {
+    -fx-background-color: -fx-app-bg;
+}
+
+.file-drawer-header {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 6 12;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 28;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.file-drawer-header:hover {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.file-drawer-body {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ============================================================
+   AI Agent
+   ============================================================ */
+.ai-assistant-panel {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.model-switcher-bar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 6 8;
+}
+
+.model-switcher-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+}
+
+.assistant-output, .assistant-output .content {
+    -fx-background-color: -fx-panel-bg;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+.assistant-input-area {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 8;
+}
+
+.ai-config-button, .clear-chat-button {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: -fx-border-default;
+}
+
+/* AI Command Card */
+.ai-command-card {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8 10;
+}
+
+.ai-command-title {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.ai-command-risk {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.ai-command-text {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-family: -fx-mono-font;
+    -fx-font-size: 13px;
+}
+
+.ai-command-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 4 12;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+}
+
+.ai-command-btn:hover {
+    -fx-background-color: -fx-hover-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.ai-command-btn-danger {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-danger-color;
+    -fx-font-size: 12px;
+    -fx-padding: 4 12;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-border-color: -fx-danger-color;
+    -fx-border-width: 1;
+}
+
+.ai-command-btn-danger:hover {
+    -fx-background-color: rgba(248, 81, 73, 0.12);
+}
+
+/* 兼容：终端叠加层 */
+.ai-overlay {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-ai-color;
+    -fx-background-radius: 6;
+}
+
+.ai-badge {
+    -fx-text-fill: -fx-ai-color;
+    -fx-font-weight: bold;
+    -fx-font-size: 11px;
+}
+
+/* ============================================================
+   连接列表 / 监控 / 欢迎（保持 Token 一致）
+   ============================================================ */
+.connection-list-panel, .monitor-panel, .welcome-page, .file-manager-area {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.status-indicator {
+    -fx-text-fill: -fx-success-color;
+}
+
+.toolbar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-padding: 4 10;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.toolbar-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+/* 侧栏系统信息（兼容旧结构） */
+.main-sidebar {
+    -fx-background-color: -fx-sidebar-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 1 0 0;
+    -fx-padding: 5 0 0 0;
+}
+
+.sidebar-section-title {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 10 4 10;
+}
+
+.system-info-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-min-width: 38;
+    -fx-padding: 1 0 1 10;
+}
+
+.system-info-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+    -fx-font-family: -fx-mono-font;
+    -fx-alignment: CENTER_RIGHT;
+    -fx-padding: 1 10 1 0;
+}
+
+.storage-table {
+    -fx-background-color: -fx-sidebar-bg;
+    -fx-border-color: transparent;
+}

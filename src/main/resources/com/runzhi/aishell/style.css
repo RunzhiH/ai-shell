@@ -1,0 +1,901 @@
+/* ============================================================
+   AIShell Design Tokens + Components — Dark（默认，对齐 index.html）
+   参考 ui.css / 《AIShell UI 优化方案 V1》
+   本文件是 ThemeManager 深色主样式（App 启动默认加载）
+   ============================================================ */
+.root {
+    -fx-app-bg:           #0D1117;
+    -fx-panel-bg:         #161B22;
+    -fx-elevated-bg:      #21262D;
+    -fx-hover-bg:         #292E36;
+    -fx-sidebar-bg:       #161B22;
+
+    -fx-border-default:   #30363D;
+    -fx-border-strong:    #484F58;
+
+    -fx-text-primary:     #E6EDF3;
+    -fx-text-secondary:   #8B949E;
+    -fx-text-disabled:    #6E7681;
+    -fx-text-inverse:     #04101F;
+
+    -fx-primary-color:    #58A6FF;
+    -fx-primary-hover:    #79C0FF;
+    -fx-ai-color:         #A371F7;
+    -fx-success-color:    #3FB950;
+    -fx-warning-color:    #D29922;
+    -fx-danger-color:     #F85149;
+    -fx-info-color:       #58A6FF;
+
+    /* 兼容旧变量名 */
+    -fx-accent-color:     #58A6FF;
+    -fx-secondary-color:  #79C0FF;
+    -fx-content-bg:       #161B22;
+    -fx-light-bg:         #21262D;
+    -fx-dark-bg:          #0D1117;
+    -fx-border-color:     #30363D;
+    -fx-hover-color:      #292E36;
+    -fx-selected-color:   #1F6FEB;
+
+    -fx-radius-sm: 4px;
+    -fx-radius-md: 6px;
+    -fx-code-bg: #0D1117;
+}
+
+.root {
+    -fx-background-color: -fx-app-bg;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- 按钮：Primary / Secondary / Ghost ---------- */
+.button, .primary-button, .secondary-button, .toolbar-button,
+.command-button, .nav-button, .nav-item, .ip-button, .ai-command-btn,
+.ai-command-btn-danger, .status-item, .new-tab-button, .connect-button,
+.ai-config-button, .clear-chat-button {
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+    -fx-padding: 6 12;
+    -fx-cursor: hand;
+}
+
+/* 默认 Ghost — 禁止 #ccc/#e0e0e0 浅色残留 */
+.button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+}
+
+.button:hover {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.button:pressed {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.button:disabled {
+    -fx-opacity: 0.45;
+}
+
+.primary-button, .command-button, .new-tab-button, .connect-button {
+    -fx-background-color: -fx-primary-color;
+    -fx-text-fill: -fx-text-inverse;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent;
+}
+
+.primary-button:hover, .command-button:hover,
+.new-tab-button:hover, .connect-button:hover {
+    -fx-background-color: -fx-primary-hover;
+}
+
+.secondary-button, .toolbar-button {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: -fx-border-default;
+}
+
+.secondary-button:hover, .toolbar-button:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.nav-button, .nav-item, .status-item, .ai-command-btn, .ip-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-border-color: transparent;
+}
+
+.nav-button:hover, .nav-item:hover, .status-item:hover,
+.ai-command-btn:hover, .ip-button:hover {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- 输入 ---------- */
+.text-field, .text-area, .combo-box, .choice-box, .password-field,
+.search-field, .path-field, .model-switcher-choice {
+    -fx-background-color: -fx-code-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-prompt-text-fill: -fx-text-disabled;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 5 8;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.text-field:focused, .text-area:focused,
+.combo-box:focused, .choice-box:focused {
+    -fx-border-color: -fx-primary-color;
+}
+
+.combo-box > .list-cell, .choice-box > .label, .choice-box > .text {
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- 表格 / 列表 ---------- */
+.table-view, .list-view {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+}
+
+.table-row-cell, .list-cell {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+    -fx-font-size: 12px;
+}
+
+.table-cell {
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+}
+
+.table-view .column-header-background,
+.table-view .filler,
+.table-view .column-header {
+    -fx-background-color: -fx-elevated-bg;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.table-row-cell:selected, .list-cell:selected {
+    -fx-background-color: -fx-elevated-bg;
+}
+
+.table-row-cell:hover, .list-cell:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+/* ---------- Tab ---------- */
+.tab-pane > .tab-header-area {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 6 12;
+    -fx-border-color: transparent;
+}
+
+.tab:selected {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -fx-primary-color transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: -fx-primary-color;
+}
+
+.tab .tab-label {
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.tab:hover .tab-label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- 菜单 ---------- */
+.menu-bar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+}
+
+.menu-bar .menu {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-padding: 5 10;
+}
+
+.menu-bar .menu:hover, .menu-bar .menu:showing {
+    -fx-background-color: -fx-elevated-bg;
+}
+
+.context-menu {
+    -fx-background-color: -fx-panel-bg !important;
+    -fx-border-color: -fx-border-default;
+    -fx-background-radius: 6;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 2);
+}
+
+.context-menu .menu-item {
+    -fx-background-color: transparent !important;
+    -fx-padding: 8 12;
+}
+
+.context-menu .menu-item:hover {
+    -fx-background-color: -fx-hover-bg !important;
+}
+
+.context-menu .menu-item > .label {
+    -fx-text-fill: -fx-text-primary !important;
+    -fx-font-size: 13px;
+}
+
+.context-menu .separator {
+    -fx-background-color: -fx-border-default;
+}
+
+/* ---------- 滚动条 ---------- */
+.scroll-bar {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: -fx-border-strong;
+    -fx-background-radius: 3;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: -fx-text-disabled;
+}
+
+/* ---------- Split / Separator ---------- */
+.split-pane {
+    -fx-background-color: -fx-app-bg;
+}
+
+.split-pane:vertical > .split-pane-divider,
+.split-pane:horizontal > .split-pane-divider {
+    -fx-background-color: -fx-border-default;
+}
+
+.separator {
+    -fx-background-color: -fx-border-default;
+    -fx-padding: 1 0;
+}
+
+/* ============================================================
+   主窗口（对齐 HTML：Server | Terminal | AI）
+   ============================================================ */
+.main-view {
+    -fx-background-color: -fx-app-bg;
+}
+
+.topbar, .main-split-pane .main-sidebar, .main-sidebar, .server-panel {
+    -fx-background-color: -fx-sidebar-bg;
+}
+
+.topbar {
+    -fx-padding: 0 12;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-min-height: 40;
+}
+
+.brand-name {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.brand-tag {
+    -fx-text-fill: -fx-text-disabled;
+    -fx-font-size: 10px;
+    -fx-padding: 1 6;
+    -fx-border-color: -fx-border-default;
+    -fx-background-radius: 2;
+    -fx-border-radius: 2;
+}
+
+.top-nav .nav-item {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 5 10;
+}
+
+.top-nav .nav-item:hover {
+    -fx-background-color: -fx-hover-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.top-nav .nav-item.active {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-primary-color;
+}
+
+.current-host-label {
+    -fx-text-fill: -fx-text-disabled;
+    -fx-font-size: 11px;
+}
+
+.current-host-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-family: "Cascadia Mono", Consolas, monospace;
+    -fx-font-size: 12px;
+}
+
+.panel-head {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 0 12;
+    -fx-min-height: 36;
+}
+
+.panel-title {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.ai-title {
+    -fx-text-fill: -fx-ai-color;
+    -fx-font-size: 13px;
+}
+
+.ai-panel {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 0 1;
+}
+
+.server-card {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-border-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 8;
+    -fx-wrap-text: true;
+}
+
+.server-card:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.server-card.active {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-border-color: -fx-border-default;
+}
+
+/* 侧栏系统信息（保留旧监控） */
+.main-sidebar .system-info-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-min-width: 38;
+}
+
+.main-sidebar .system-info-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+    -fx-font-family: "Cascadia Mono", Consolas, monospace;
+    -fx-alignment: CENTER_RIGHT;
+}
+
+.sidebar-section-title {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 10 4 10;
+}
+
+.sidebar-details {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.sidebar-details > .title {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 7 8;
+}
+
+.sidebar-details > .content {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4 6 8 6;
+}
+
+.status-indicator {
+    -fx-text-fill: -fx-success-color;
+}
+
+.toolbar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-padding: 4 10;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.toolbar-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+.status-bar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 28;
+    -fx-padding: 0 12;
+}
+
+.status-bar .status-label {
+    -fx-text-fill: -fx-text-disabled;
+    -fx-font-size: 11px;
+}
+
+.status-ok { -fx-text-fill: -fx-success-color; }
+.status-warn { -fx-text-fill: -fx-warning-color; }
+.status-ai { -fx-text-fill: -fx-ai-color; }
+
+/* ---------- Terminal ---------- */
+.terminal-panel {
+    -fx-background-color: -fx-app-bg;
+}
+
+.terminal-toolbar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4 8;
+}
+
+.terminal-toolbar .button {
+    -fx-padding: 5 9;
+    -fx-font-size: 12px;
+}
+
+.terminal-tab-pane {
+    -fx-background-color: -fx-app-bg;
+}
+
+.terminal-tab-pane .tab-header-area .tab-header-background {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.terminal-tab-pane .tab {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: transparent -fx-border-default -fx-border-default transparent;
+}
+
+.terminal-tab-pane .tab:selected {
+    -fx-background-color: -fx-elevated-bg;
+}
+
+.terminal-tab-pane .tab .tab-label {
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.terminal-tab-pane .tab:selected .tab-label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+.terminal-output, .terminal-output .content {
+    -fx-background-color: -fx-code-bg;
+}
+
+.terminal-output .text {
+    -fx-fill: -fx-text-primary;
+}
+
+.connection-info-label {
+    -fx-font-family: "Cascadia Mono", Consolas, monospace;
+    -fx-font-size: 12px;
+}
+
+.command-input {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* ---------- SFTP Drawer ---------- */
+.terminal-drawer-container {
+    -fx-background-color: -fx-app-bg;
+}
+
+.agent-workspace-host {
+    -fx-background-color: -fx-app-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 0 1;
+    -fx-min-width: 280;
+}
+
+.split-pane > .split-pane-divider {
+    -fx-background-color: -fx-border-default;
+}
+
+.split-pane > .split-pane-divider:hover {
+    -fx-background-color: -fx-primary-color;
+}
+
+.file-drawer-header {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 6 12;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 28;
+    -fx-alignment: CENTER_LEFT;
+}
+
+.file-drawer-header:hover {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.file-drawer-body {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ---------- AI ---------- */
+.ai-assistant-panel {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.model-switcher-bar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 6 8;
+}
+
+.model-switcher-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+}
+
+.assistant-output, .assistant-output .content {
+    -fx-background-color: -fx-panel-bg;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+.assistant-input-area {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 8;
+}
+
+.ai-command-card {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8 10;
+}
+
+.ai-command-title {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.ai-command-risk {
+    -fx-text-fill: -fx-warning-color;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.ai-command-text {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-family: "Cascadia Mono", Consolas, monospace;
+    -fx-font-size: 13px;
+}
+
+.ai-command-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 4 12;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1;
+}
+
+.ai-command-btn:hover {
+    -fx-background-color: -fx-hover-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.ai-command-btn-danger {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-danger-color;
+    -fx-font-size: 12px;
+    -fx-padding: 4 12;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-border-color: -fx-danger-color;
+    -fx-border-width: 1;
+}
+
+.connection-list-panel, .monitor-panel, .welcome-page, .file-manager-area {
+    -fx-background-color: -fx-panel-bg;
+}
+
+.storage-table {
+    -fx-background-color: -fx-sidebar-bg;
+    -fx-border-color: transparent;
+}
+
+/* Unified UI: shared by both palettes via light-theme.css. */
+.root {
+    -fx-base: -fx-panel-bg;
+    -fx-background: -fx-app-bg;
+    -fx-control-inner-background: -fx-panel-bg;
+    -fx-control-inner-background-alt: -fx-panel-bg;
+    -fx-accent: -fx-primary-color;
+    -fx-focus-color: -fx-primary-color;
+    -fx-faint-focus-color: transparent;
+    -fx-text-base-color: -fx-text-primary;
+    -fx-text-background-color: -fx-text-primary;
+    -fx-selection-bar: -fx-elevated-bg;
+    -fx-selection-bar-non-focused: -fx-elevated-bg;
+    -fx-selection-bar-text: -fx-text-primary;
+    -fx-mark-color: -fx-text-secondary;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI";
+    -fx-font-size: 13px;
+}
+
+/* Consistent control sizing, focus and semantic actions. */
+.button, .toggle-button, .menu-button, .primary-button, .secondary-button,
+.toolbar-button, .nav-item, .danger-button, .button-success, .refresh-button,
+.upload-download-button, .connect-button, .command-button {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-border-color: -fx-border-default;
+    -fx-padding: 7 12;
+    -fx-min-height: 32;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI";
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+.button:hover, .toggle-button:hover, .menu-button:hover {
+    -fx-background-color: -fx-hover-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+.button:focused, .toggle-button:focused, .menu-button:focused {
+    -fx-border-color: -fx-primary-color;
+}
+.primary-button, .connect-button, .command-button, .button-success,
+.button:default {
+    -fx-background-color: -fx-primary-color;
+    -fx-text-fill: -fx-text-inverse;
+    -fx-border-color: transparent;
+    -fx-font-weight: bold;
+}
+.primary-button:hover, .connect-button:hover, .command-button:hover,
+.button-success:hover, .button:default:hover { -fx-background-color: -fx-primary-hover; }
+.danger-button, .ai-command-btn-danger { -fx-text-fill: -fx-danger-color; }
+.danger-button:hover { -fx-border-color: -fx-danger-color; }
+.nav-item, .nav-button, .status-item, .ai-command-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+}
+.nav-item:hover, .nav-item.active, .nav-button:selected {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-text-fill: -fx-primary-color;
+}
+.text-field, .password-field, .text-area, .combo-box, .choice-box, .spinner {
+    -fx-background-color: -fx-code-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-prompt-text-fill: -fx-text-disabled;
+    -fx-highlight-fill: -fx-primary-color;
+    -fx-highlight-text-fill: -fx-text-inverse;
+    -fx-border-color: -fx-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-min-height: 34;
+}
+.text-field, .password-field { -fx-padding: 7 10; }
+.text-area .content { -fx-background-color: -fx-code-bg; -fx-background-radius: 6; }
+.text-field:focused, .text-area:focused, .combo-box:focused, .spinner:focused {
+    -fx-border-color: -fx-primary-color;
+}
+.combo-box .list-cell { -fx-background-color: transparent; -fx-padding: 4 8; }
+.combo-box-popup .list-view { -fx-background-color: -fx-panel-bg; }
+.combo-box-popup .list-cell:hover { -fx-background-color: -fx-hover-bg; }
+.check-box, .radio-button { -fx-text-fill: -fx-text-primary; -fx-padding: 4 0; }
+.check-box .box, .radio-button .radio {
+    -fx-background-color: -fx-code-bg;
+    -fx-border-color: -fx-border-strong;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 4;
+}
+.check-box:selected .mark, .radio-button:selected .dot { -fx-background-color: -fx-primary-color; }
+.hyperlink { -fx-text-fill: -fx-primary-color; }
+.tooltip { -fx-background-color: -fx-elevated-bg; -fx-text-fill: -fx-text-primary; -fx-padding: 8 12; }
+
+/* Page hierarchy and shared content containers. */
+.connection-list-panel, .monitor-panel, .bookmark-panel,
+.settings-dialog-container, .form-dialog {
+    -fx-background-color: -fx-app-bg;
+    -fx-spacing: 16;
+    -fx-padding: 20;
+}
+.page-heading { -fx-padding: 0 0 4 0; }
+.page-title, .monitor-title { -fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
+.page-description, .text-secondary, .search-label, .stat-label, .tip-text {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+.section-title, .chart-title, .action-title { -fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
+.text-info { -fx-text-fill: -fx-primary-color; }
+.text-success { -fx-text-fill: -fx-success-color; }
+.text-danger, .text-error { -fx-text-fill: -fx-danger-color; }
+.toolbar, .terminal-toolbar {
+    -fx-background-color: -fx-panel-bg;
+    -fx-padding: 10 12;
+    -fx-spacing: 8;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 0 1 0;
+}
+.connection-list-panel .toolbar { -fx-background-radius: 8; -fx-border-radius: 8; -fx-border-width: 1; }
+.stats-bar { -fx-padding: 8 12; -fx-spacing: 16; -fx-background-color: -fx-panel-bg; }
+.stats-bar .label { -fx-font-size: 11px; -fx-text-fill: -fx-text-secondary; }
+.scroll-pane, .scroll-pane > .viewport { -fx-background-color: transparent; }
+.scroll-pane { -fx-padding: 0; -fx-border-color: transparent; }
+.split-pane { -fx-padding: 0; -fx-background-insets: 0; }
+.split-pane > .split-pane-divider { -fx-padding: 0 2; -fx-background-color: -fx-border-default; }
+.separator { -fx-padding: 0; -fx-background-color: transparent; }
+.separator .line { -fx-border-color: -fx-border-default; -fx-border-insets: 0; }
+
+/* Readable, quiet tables across connection, file and history views. */
+.table-view, .tree-view, .list-view {
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 1;
+}
+.table-view .column-header, .table-view .filler {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-border-color: transparent transparent -fx-border-default transparent;
+    -fx-size: 38;
+}
+.table-view .column-header .label { -fx-alignment: CENTER_LEFT; -fx-padding: 0 10; -fx-font-weight: normal; }
+.table-cell { -fx-text-fill: -fx-text-primary; -fx-padding: 10; -fx-alignment: CENTER_LEFT; -fx-border-color: transparent; }
+.table-row-cell { -fx-cell-size: 40; -fx-background-color: -fx-panel-bg; }
+.table-row-cell:filled:hover, .list-cell:filled:hover, .tree-cell:filled:hover { -fx-background-color: -fx-hover-bg; }
+.table-row-cell:filled:selected, .list-cell:filled:selected, .tree-cell:filled:selected { -fx-background-color: -fx-elevated-bg; }
+.table-row-cell:selected .table-cell { -fx-text-fill: -fx-primary-color; }
+.table-view .placeholder .label { -fx-text-fill: -fx-text-secondary; -fx-padding: 24; }
+.list-cell, .tree-cell { -fx-background-color: -fx-panel-bg; -fx-text-fill: -fx-text-primary; -fx-padding: 10 12; }
+.table-row-cell:empty, .list-cell:empty { -fx-background-color: -fx-panel-bg; }
+
+/* Shell and sidebar keep the workspace compact. */
+.topbar { -fx-padding: 8 16; -fx-spacing: 8; }
+.brand-name { -fx-font-size: 18px; }
+.brand-tag { -fx-padding: 3 6; -fx-font-size: 10px; -fx-text-fill: -fx-text-secondary; }
+.top-nav .nav-item { -fx-padding: 7 12; -fx-font-size: 13px; }
+.panel-head { -fx-min-height: 44; -fx-padding: 6 14; }
+.panel-title { -fx-font-size: 12px; -fx-font-weight: bold; }
+.main-sidebar { -fx-padding: 0; }
+.server-card { -fx-padding: 10 12; -fx-background-radius: 6; -fx-text-fill: -fx-text-primary; -fx-alignment: CENTER_LEFT; }
+.system-info-panel { -fx-padding: 16; }
+.sidebar-section-title { -fx-padding: 0 0 8 0; -fx-font-size: 11px; -fx-text-fill: -fx-text-secondary; }
+.system-info-label { -fx-min-width: 64; -fx-padding: 0; -fx-text-fill: -fx-text-secondary; }
+.system-info-value { -fx-padding: 0; -fx-text-fill: -fx-text-primary; -fx-font-family: "Consolas"; }
+.sidebar-details { -fx-padding: 0 10; }
+.sidebar-details-content { -fx-padding: 12 0; }
+.storage-table .table-cell { -fx-padding: 6; -fx-font-size: 11px; }
+.status-bar { -fx-padding: 0 14; }
+.status-bar .status-item { -fx-min-height: 26; -fx-padding: 3 8; }
+.terminal-toolbar { -fx-padding: 8 12; }
+.tab-pane > .tab-header-area > .tab-header-background { -fx-background-color: -fx-panel-bg; }
+.tab { -fx-padding: 8 12; -fx-background-radius: 0; }
+.tab:selected { -fx-border-width: 0 0 2 0; -fx-border-color: transparent transparent -fx-primary-color transparent; }
+.terminal-tab-pane .tab:selected { -fx-background-color: -fx-elevated-bg; }
+.file-pane { -fx-padding: 12; -fx-background-color: -fx-panel-bg; }
+.file-manager-area .table-cell { -fx-padding: 7 8; }
+.file-manager-area .table-row-cell { -fx-cell-size: 32; }
+.file-manager-area .column-header { -fx-size: 32; }
+.file-toolbar .button { -fx-padding: 5 8; -fx-min-height: 28; -fx-font-size: 12px; }
+/* 文件管理器底部传输进度条 */
+.transfer-progress-bar { -fx-pref-width: 180; -fx-min-height: 12; -fx-pref-height: 12; }
+.transfer-progress-bar > .track { -fx-background-color: -fx-hover-bg; -fx-background-radius: 6; -fx-background-insets: 0; }
+.transfer-progress-bar > .bar { -fx-background-color: -fx-primary-color; -fx-background-radius: 6; }
+
+/* 拖拽上传悬停在远程面板上的高亮提示 */
+.file-pane.drop-target {
+    -fx-background-color: rgba(88, 166, 255, 0.12);
+    -fx-border-color: -fx-primary-color;
+    -fx-border-width: 2;
+    -fx-border-radius: 8;
+}
+.agent-workspace { -fx-background-color: -fx-code-bg; }
+
+/* Forms, settings and modal dialogs use the same controls. */
+.dialog-pane { -fx-background-color: -fx-app-bg; -fx-padding: 20; }
+.dialog-pane > .header-panel { -fx-background-color: -fx-app-bg; -fx-padding: 0 0 16 0; }
+.dialog-pane > .header-panel .label { -fx-font-size: 18px; -fx-font-weight: bold; }
+.dialog-pane > .content { -fx-padding: 12 0; }
+.dialog-pane > .button-bar { -fx-padding: 16 0 0 0; }
+.settings-dialog-container { -fx-padding: 20; -fx-spacing: 16; }
+.settings-page { -fx-padding: 0 16 16 16; -fx-spacing: 16; }
+.settings-tree { -fx-border-color: transparent; -fx-background-color: -fx-panel-bg; }
+.settings-tree .tree-cell { -fx-padding: 12; }
+.settings-dialog-buttons { -fx-border-color: -fx-border-default; -fx-border-width: 1 0 0 0; -fx-padding: 16 0 0 0; }
+.titled-pane { -fx-text-fill: -fx-text-primary; -fx-animated: false; }
+.titled-pane > .title {
+    -fx-background-color: -fx-elevated-bg;
+    -fx-background-radius: 6 6 0 0;
+    -fx-padding: 12;
+    -fx-font-weight: bold;
+}
+.titled-pane > .title > .arrow-button .arrow { -fx-background-color: -fx-text-secondary; }
+.titled-pane > .content { -fx-background-color: -fx-panel-bg; -fx-border-color: -fx-border-default; -fx-padding: 12; }
+.sidebar-details > .title { -fx-background-color: transparent; -fx-padding: 8 6; }
+.sidebar-details > .content { -fx-border-color: transparent; -fx-padding: 4; }
+.progress-bar > .track { -fx-background-color: -fx-elevated-bg; -fx-background-radius: 4; }
+.progress-bar > .bar { -fx-background-color: -fx-primary-color; -fx-background-radius: 4; -fx-background-insets: 0; -fx-padding: 5; }
+.slider .track { -fx-background-color: -fx-border-default; }
+.slider .thumb { -fx-background-color: -fx-primary-color; }
+.monitor-section-title { -fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: -fx-text-secondary; }
+.monitor-value { -fx-font-size: 14px; -fx-text-fill: -fx-text-primary; }
+.monitor-item { -fx-alignment: CENTER_LEFT; -fx-padding: 0 0 8 0; }
+.monitor-panel .progress-bar { -fx-max-width: infinity; }
+.chart { -fx-padding: 12; -fx-background-color: -fx-panel-bg; }
+.chart-plot-background { -fx-background-color: -fx-code-bg; }
+.chart-legend { -fx-background-color: transparent; }
+.chart-title { -fx-text-fill: -fx-text-primary; }
+.axis { -fx-tick-label-fill: -fx-text-secondary; }
+.chart-horizontal-grid-lines, .chart-vertical-grid-lines { -fx-stroke: -fx-border-default; }
+.default-color0.chart-series-line { -fx-stroke: -fx-primary-color; }
+.default-color1.chart-series-line { -fx-stroke: -fx-ai-color; }
+.welcome-page { -fx-background-color: -fx-app-bg; }
+.welcome-title { -fx-font-size: 36px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
+.welcome-subtitle { -fx-font-size: 16px; -fx-text-fill: -fx-text-secondary; }
+.action-card { -fx-padding: 28; -fx-background-color: -fx-panel-bg; -fx-border-color: -fx-border-default; -fx-background-radius: 10; -fx-border-radius: 10; }
+.metric-card { -fx-padding: 20; -fx-background-color: -fx-panel-bg; -fx-border-color: -fx-border-default; -fx-background-radius: 8; -fx-border-radius: 8; }
+.metric-value { -fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
+.advanced-charts-panel, .history-dialog-container { -fx-background-color: -fx-app-bg; -fx-padding: 20; -fx-spacing: 16; }
+.command-input > .command-button { -fx-min-width: 56; }
+.command-input > .choice-box { -fx-min-width: 100; }
+.command-input > .text-field { -fx-min-width: 80; }
+.command-input > .label { -fx-min-width: 34; }
+.menu-bar .menu-button { -fx-background-color: transparent; -fx-border-color: transparent; -fx-min-height: 26; -fx-padding: 4 10; }

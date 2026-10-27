@@ -1,0 +1,784 @@
+/* ===================================
+   AIShell 深色主题样式表
+   版本：v1.0
+   创建日期：2026-03-17
+   =================================== */
+
+/* ==================== 全局变量定义 ==================== */
+.root {
+    /* 背景色 */
+    -fx-background-color: #1e1e1e;
+    
+    /* 主色调 */
+    -primary-color: #007acc;
+    -primary-hover: #0098f7;
+    -primary-dark: #005a9e;
+    
+    /* 背景色系 */
+    -bg-primary: #1e1e1e;
+    -bg-secondary: #252526;
+    -bg-tertiary: #2d2d30;
+    -bg-hover: #3e3e42;
+    
+    /* 文字色系 */
+    -text-primary: #cccccc;
+    -text-secondary: #858585;
+    -text-inverse: #ffffff;
+    -text-muted: #666666;
+    
+    /* 状态色 */
+    -success-color: #4ec9b0;
+    -warning-color: #ce9178;
+    -error-color: #f44747;
+    -info-color: #569cd6;
+    
+    /* 边框色 */
+    -border-color: #3e3e42;
+    -border-light: #2d2d30;
+    
+    /* 阴影 */
+    -shadow-color: rgba(0, 0, 0, 0.3);
+}
+
+/* ==================== 基础组件样式 ==================== */
+
+/* 按钮样式 */
+.button {
+    -fx-background-color: -primary-color;
+    -fx-text-fill: -text-inverse;
+    -fx-font-size: 14px;
+    -fx-padding: 8 16;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+}
+
+.button:hover {
+    -fx-background-color: -primary-hover;
+}
+
+.button:pressed {
+    -fx-background-color: -primary-dark;
+}
+
+.button:disabled {
+    -fx-background-color: -bg-tertiary;
+    -fx-text-fill: -text-muted;
+}
+
+/* 次要按钮 */
+.secondary-button {
+    -fx-background-color: -bg-tertiary;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1;
+}
+
+.secondary-button:hover {
+    -fx-background-color: -bg-hover;
+}
+
+/* 输入框样式 */
+.text-field, .text-area {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-muted;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 6;
+}
+
+.text-field:focused, .text-area:focused {
+    -fx-border-color: -primary-color;
+    -fx-background-insets: 0;
+}
+
+/* 标签样式 */
+.label {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 14px;
+}
+
+/* ==================== 容器组件样式 ==================== */
+
+/* 菜单栏样式 */
+.main-menubar {
+    -fx-background-color: -bg-secondary;
+    -fx-padding: 0;
+    -fx-border-color: -border-color;
+    -fx-border-width: 0 0 1 0;
+}
+
+.main-menubar .menu {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-padding: 5 10;
+    -fx-font-size: 13px;
+}
+
+.main-menubar .menu:hover {
+    -fx-background-color: -bg-hover;
+}
+
+.main-menubar .menu:showing {
+    -fx-background-color: -bg-hover;
+}
+
+.main-menubar .menu .label {
+    -fx-text-fill: -text-primary;
+}
+
+/* 下拉菜单项 */
+.context-menu {
+    -fx-background-color: -bg-secondary !important;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 10, 0, 0, 2);
+}
+
+.context-menu .menu-item {
+    -fx-background-color: transparent !important;
+    -fx-padding: 8 12;
+}
+
+.context-menu .menu-item:hover {
+    -fx-background-color: -primary-color !important;
+}
+
+/* 菜单项文字 - 使用 !important 确保优先级 */
+.context-menu .menu-item > .label {
+    -fx-text-fill: #cccccc !important;
+    -fx-font-size: 13px;
+}
+
+.context-menu .menu-item:hover > .label {
+    -fx-text-fill: #ffffff !important;
+}
+
+.context-menu .separator {
+    -fx-background-color: -border-color;
+    -fx-padding: 1 0;
+}
+
+/* 菜单项图标和快捷键 */
+.context-menu .menu-item > .graphic {
+    -fx-text-fill: #cccccc !important;
+}
+
+.context-menu .menu-item:hover > .graphic {
+    -fx-text-fill: #ffffff !important;
+}
+
+.context-menu .menu-item > .accelerator {
+    -fx-text-fill: #858585 !important;
+    -fx-font-size: 12px;
+}
+
+.context-menu .menu-item:hover > .accelerator {
+    -fx-text-fill: #ffffff !important;
+}
+
+/* 主工具栏样式 (保留兼容性) */
+.main-toolbar {
+    -fx-background-color: -bg-secondary;
+    -fx-padding: 10 15;
+    -fx-border-color: -border-color;
+    -fx-border-width: 0 0 1 0;
+    -fx-spacing: 10;
+}
+
+.main-toolbar .button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+    -fx-padding: 6 12;
+    -fx-font-size: 13px;
+}
+
+.main-toolbar .button:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: -primary-color;
+}
+
+.main-toolbar .button:pressed {
+    -fx-background-color: -bg-tertiary;
+}
+
+/* 主要按钮 (突出显示) */
+.main-toolbar .primary-button {
+    -fx-background-color: -primary-color;
+    -fx-text-fill: -text-inverse;
+    -fx-font-weight: bold;
+}
+
+.main-toolbar .primary-button:hover {
+    -fx-background-color: -primary-hover;
+}
+
+.main-toolbar .primary-button:pressed {
+    -fx-background-color: -primary-dark;
+}
+
+/* 终端工具栏样式 */
+.terminal-toolbar {
+    -fx-background-color: -bg-tertiary;
+    -fx-padding: 8 12;
+    -fx-spacing: 8;
+}
+
+.terminal-toolbar .toolbar-button {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -border-color;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 5 10;
+    -fx-font-size: 12px;
+}
+
+.terminal-toolbar .toolbar-button:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: -primary-color;
+}
+
+.terminal-toolbar .toolbar-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 13px;
+    -fx-padding: 0 5;
+}
+
+/* SplitPane */
+.split-pane {
+    -fx-background-color: -bg-primary;
+    -fx-border-color: -border-color;
+}
+
+.split-pane > .split-pane-divider {
+    -fx-background-color: -bg-tertiary;
+    -fx-border-color: -border-color;
+}
+
+/* ScrollPane */
+.scroll-pane {
+    -fx-background-color: -bg-primary;
+    -fx-border-color: transparent;
+}
+
+.scroll-pane > .viewport {
+    -fx-background-color: -bg-primary;
+}
+
+/* TabPane */
+.tab-pane {
+    -fx-background-color: -bg-primary;
+}
+
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-color: -bg-secondary;
+}
+
+.tab {
+    -fx-background-color: -bg-tertiary;
+    -fx-padding: 4 8;
+}
+
+.tab:selected {
+    -fx-background-color: -primary-color;
+}
+
+.tab .tab-label {
+    -fx-text-fill: -text-primary;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: -text-inverse;
+}
+
+/* ==================== 列表和表格样式 ==================== */
+
+/* ListView */
+.list-view {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.list-cell {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+    -fx-padding: 8;
+}
+
+.list-cell:selected {
+    -fx-background-color: -primary-color;
+    -fx-text-fill: -text-inverse;
+}
+
+.list-cell:hover {
+    -fx-background-color: -bg-hover;
+}
+
+/* TableView */
+.table-view {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.table-view .column-header {
+    -fx-background-color: -bg-tertiary;
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+}
+
+.table-view .table-row-cell {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-light;
+}
+
+.table-view .table-row-cell:selected {
+    -fx-background-color: -primary-color;
+}
+
+.table-view .table-row-cell:hover {
+    -fx-background-color: -bg-hover;
+}
+
+/* TreeView */
+.tree-view {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.tree-cell {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+}
+
+.tree-cell:selected {
+    -fx-background-color: -primary-color;
+    -fx-text-fill: -text-inverse;
+}
+
+/* ==================== 对话框和面板样式 ==================== */
+
+/* TitledPane */
+.titled-pane {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+}
+
+.titled-pane > .title {
+    -fx-background-color: -bg-tertiary;
+    -fx-text-fill: -text-primary;
+    -fx-font-weight: bold;
+    -fx-padding: 8 12;
+}
+
+.titled-pane > .content {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+}
+
+/* ComboBox */
+.combo-box {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.combo-box > .arrow-button {
+    -fx-background-color: -bg-tertiary;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -bg-secondary;
+}
+
+.combo-box-popup .list-cell {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+}
+
+/* Spinner */
+.spinner {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.spinner > .text-field {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+}
+
+/* CheckBox */
+.check-box {
+    -fx-text-fill: -text-primary;
+}
+
+.check-box > .box {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.check-box:selected > .box {
+    -fx-background-color: -primary-color;
+}
+
+/* RadioButton */
+.radio-button {
+    -fx-text-fill: -text-primary;
+}
+
+/* ==================== 进度条和图表样式 ==================== */
+
+/* ProgressBar */
+.progress-bar > .track {
+    -fx-background-color: -bg-tertiary;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: -primary-color;
+}
+
+/* 监控面板告警样式 */
+.progress-normal .track {
+    -fx-background-color: -success-color;
+}
+
+.progress-warning .track {
+    -fx-background-color: -warning-color;
+}
+
+.progress-critical .track {
+    -fx-background-color: -error-color;
+}
+
+/* Slider */
+.slider > .track {
+    -fx-background-color: -bg-tertiary;
+}
+
+.slider > .thumb {
+    -fx-background-color: -primary-color;
+}
+
+/* Chart */
+.chart {
+    -fx-background-color: transparent;
+}
+
+.chart-plot-background {
+    -fx-background-color: -bg-secondary;
+}
+
+.chart-title {
+    -fx-text-fill: -text-primary;
+}
+
+.axis {
+    -fx-tick-label-fill: -text-secondary;
+}
+
+.axis-label {
+    -fx-text-fill: -text-primary;
+}
+
+/* ==================== 特定组件样式 ==================== */
+
+/* 终端面板 */
+.terminal-area {
+    -fx-background-color: #1e1e1e;
+    -fx-text-fill: #cccccc;
+    -fx-font-family: "Consolas", "Monaco", monospace;
+}
+
+/* 文件管理器 */
+.file-manager-area {
+    -fx-background-color: -bg-primary;
+}
+
+.file-table {
+    -fx-background-color: -bg-secondary;
+}
+
+/* 设置对话框 */
+.settings-dialog-container {
+    -fx-background-color: -bg-primary;
+}
+
+.settings-panel {
+    -fx-background-color: -bg-primary;
+}
+
+.settings-tree {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.settings-tree .tree-cell:selected {
+    -fx-background-color: -primary-color;
+    -fx-text-fill: -text-inverse;
+}
+
+.settings-content-scroll {
+    -fx-background-color: -bg-primary;
+}
+
+.settings-content {
+    -fx-background-color: -bg-primary;
+}
+
+.settings-page {
+    -fx-background-color: -bg-primary;
+}
+
+.settings-section {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.settings-section > .title {
+    -fx-background-color: -bg-tertiary;
+    -fx-text-fill: -text-primary;
+}
+
+/* 欢迎页面 */
+.welcome-page {
+    -fx-background-color: linear-gradient(to bottom, #1e1e1e, #2d2d30);
+}
+
+.action-card {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+
+.action-card:hover {
+    -fx-background-color: -bg-hover;
+    -fx-border-color: -primary-color;
+    -fx-effect: dropshadow(gaussian, -shadow-color, 10, 0, 0, 2);
+}
+
+/* ==================== 工具提示和弹窗 ==================== */
+
+/* ToolTip */
+.tooltip {
+    -fx-background-color: -bg-tertiary;
+    -fx-text-fill: -text-primary;
+    -fx-border-color: -border-color;
+    -fx-font-size: 12px;
+}
+
+/* ContextMenu */
+.context-menu {
+    -fx-background-color: -bg-secondary;
+    -fx-border-color: -border-color;
+}
+
+.menu-item {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+}
+
+.menu-item:hover {
+    -fx-background-color: -bg-hover;
+}
+
+.menu-item:selected {
+    -fx-background-color: -primary-color;
+    -fx-text-fill: -text-inverse;
+}
+
+/* SeparatorMenuItem */
+.separator-menu-item > .separator-line {
+    -fx-background-color: -border-color;
+}
+
+/* ==================== 滚动条样式 ==================== */
+
+.scroll-bar {
+    -fx-background-color: -bg-primary;
+}
+
+.scroll-bar > .thumb {
+    -fx-background-color: -bg-tertiary;
+    -fx-background-radius: 4;
+}
+
+.scroll-bar > .thumb:hover {
+    -fx-background-color: -bg-hover;
+}
+
+.scroll-bar > .increment-button,
+.scroll-bar > .decrement-button {
+    -fx-background-color: -bg-tertiary;
+}
+
+.scroll-bar > .increment-button:hover,
+.scroll-bar > .decrement-button:hover {
+    -fx-background-color: -bg-hover;
+}
+
+/* ==================== 其他组件 ==================== */
+
+/* Hyperlink */
+.hyperlink {
+    -fx-text-fill: -info-color;
+}
+
+.hyperlink:hover {
+    -fx-text-fill: -primary-hover;
+}
+
+/* PasswordField */
+.password-field {
+    -fx-background-color: -bg-secondary;
+    -fx-text-fill: -text-primary;
+}
+
+/* DatePicker */
+.date-picker {
+    -fx-background-color: -bg-secondary;
+}
+
+.date-picker > .arrow-button {
+    -fx-background-color: -bg-tertiary;
+}
+
+/* ColorPicker */
+.color-picker {
+    -fx-background-color: -bg-secondary;
+}
+
+/* ==================== 动画和过渡 ==================== */
+
+.button, .text-field, .combo-box,
+.action-card, .list-cell, .table-row-cell {
+    -fx-background-color: -bg-secondary;
+}
+
+/* ==================== 新增样式类深色覆盖 ==================== */
+
+/* 主视图布局 */
+.main-split-pane { -fx-background-color: -bg-primary; }
+.toolbar { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.toolbar-label { -fx-text-fill: -text-primary; }
+.new-tab-button { -fx-background-color: -primary-color; -fx-text-fill: -text-inverse; }
+.new-tab-button:hover { -fx-background-color: -primary-hover; }
+.sidebar-tools { -fx-background-color: -bg-tertiary; }
+.monitor-button, .ai-button, .file-transfer-button {
+    -fx-background-color: -bg-tertiary; -fx-text-fill: -text-primary;
+    -fx-border-color: -border-color;
+}
+.monitor-button:hover, .ai-button:hover, .file-transfer-button:hover {
+    -fx-background-color: -bg-hover;
+}
+.status-bar { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.upgrade-button { -fx-background-color: -primary-color; -fx-text-fill: -text-inverse; }
+
+/* 系统信息面板 */
+.system-info-panel { -fx-background-color: -bg-secondary; }
+.status-indicator { -fx-text-fill: -success-color; }
+.status-label { -fx-text-fill: -text-primary; }
+.ip-button { -fx-text-fill: -primary-color; }
+.system-info-container { }
+.system-info-label { -fx-text-fill: -text-secondary; }
+.system-info-value { -fx-text-fill: -text-primary; }
+.storage-info-panel { -fx-background-color: -bg-secondary; }
+.storage-table { -fx-background-color: -bg-secondary; -fx-border-color: -border-color; }
+.separator { -fx-background-color: -border-color; }
+
+/* 终端面板 */
+.terminal-tab-pane { -fx-background-color: -bg-primary; }
+.connection-info-label { -fx-text-fill: -text-secondary; }
+.command-input { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; -fx-text-fill: -text-primary; }
+.command-input:focused { -fx-border-color: -primary-color; }
+.command-button { -fx-background-color: -primary-color; -fx-text-fill: -text-inverse; }
+
+/* 监控面板 */
+.monitor-panel { -fx-background-color: -bg-secondary; }
+.monitor-panel-sidebar { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.monitor-header { }
+.monitor-title { -fx-text-fill: -text-primary; }
+.monitor-section-title { -fx-text-fill: -text-primary; }
+.monitor-item { }
+.monitor-value { -fx-text-fill: -text-primary; }
+.cpu-frequency { -fx-text-fill: -text-secondary; }
+.detailed-monitor { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.chart-container { -fx-background-color: -bg-secondary; -fx-border-color: -border-color; }
+.section-title { -fx-text-fill: -text-primary; }
+.panel-title { -fx-text-fill: -text-primary; }
+
+/* AI 助手 */
+.ai-assistant-panel { -fx-background-color: -bg-secondary; }
+.assistant-output { -fx-background-color: -bg-primary; -fx-border-color: -border-color; }
+.assistant-input-area { }
+.clear-chat-button { -fx-background-color: -bg-tertiary; -fx-text-fill: -text-primary; -fx-border-color: -border-color; }
+.clear-chat-button:hover { -fx-background-color: -bg-hover; }
+.ai-config-button { -fx-background-color: -bg-tertiary; -fx-text-fill: -text-primary; -fx-border-color: -border-color; }
+.code-preview { -fx-background-color: -bg-primary; -fx-border-color: -border-color; -fx-text-fill: -text-primary; }
+.label-bold { -fx-text-fill: -text-primary; }
+
+/* 连接列表 */
+.connection-list-panel { -fx-background-color: -bg-secondary; }
+.connect-button { -fx-background-color: -primary-color; -fx-text-fill: -text-inverse; }
+.connect-button:hover { -fx-background-color: -primary-hover; }
+.refresh-button { -fx-background-color: -bg-tertiary; -fx-text-fill: -text-primary; -fx-border-color: -border-color; }
+.refresh-button:hover { -fx-background-color: -bg-hover; }
+
+/* 云同步 */
+.stats-bar { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.stat-label { -fx-text-fill: -text-primary; }
+.status-row { }
+.status-text { -fx-text-fill: -text-secondary; }
+
+/* 设置对话框 */
+.settings-dialog-container { -fx-background-color: -bg-secondary; }
+.settings-dialog-buttons { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+
+/* 书签面板 */
+.bookmark-panel { -fx-background-color: -bg-secondary; }
+
+/* 高级图表 */
+.advanced-charts-panel { -fx-background-color: -bg-secondary; }
+
+/* 通用辅助 */
+.white-background { -fx-background-color: -bg-secondary; }
+.black-text { -fx-text-fill: -text-primary; }
+.white-text { -fx-text-fill: -text-inverse; }
+.welcome-label { -fx-text-fill: -text-primary; }
+.prompt-label { -fx-text-fill: -text-secondary; }
+.info-label { -fx-text-fill: -text-secondary; }
+.search-field { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; -fx-text-fill: -text-primary; }
+.search-label { -fx-text-fill: -text-secondary; }
+.ai-terminal-panel { -fx-background-color: -bg-secondary; }
+
+/* 插件市场 */
+.button-primary { -fx-background-color: -primary-color; -fx-text-fill: -text-inverse; }
+.button-primary:hover { -fx-background-color: -primary-hover; }
+.button-success { -fx-background-color: -success-color; -fx-text-fill: -text-inverse; }
+.button-danger { -fx-background-color: -error-color; -fx-text-fill: -text-inverse; }
+.text-info { -fx-text-fill: -info-color; }
+.text-secondary { -fx-text-fill: -text-secondary; }
+
+/* 补全弹窗 */
+.completion-popup { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.completion-list { -fx-background-color: -bg-tertiary; }
+.completion-item { -fx-text-fill: -text-primary; }
+.completion-item:hover { -fx-background-color: -bg-hover; }
+
+/* 历史对话框 */
+.history-dialog-container { -fx-background-color: -bg-secondary; }
+.dialog-title { -fx-text-fill: -text-primary; }
+
+/* 路径栏 */
+.path-bar { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; }
+.path-label { -fx-text-fill: -primary-color; }
+.path-field { -fx-background-color: -bg-tertiary; -fx-border-color: -border-color; -fx-text-fill: -text-primary; }
+
+/* 终端深色输出区 */
+.terminal-dark-output { -fx-control-inner-background: #000000; -fx-text-fill: #00ff00; -fx-background: #000000; -fx-background-color: #000000; }

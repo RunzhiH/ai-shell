@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.collections.FXCollections?>
+<?import java.lang.String?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.SettingsGeneralController"
+      spacing="20" styleClass="settings-page">
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+    
+    <children>
+        <!-- 通用设置 -->
+        <TitledPane text="%settings.general" expanded="true" styleClass="settings-section">
+            <VBox spacing="15">
+                <padding>
+                    <Insets top="10" right="10" bottom="10" left="10"/>
+                </padding>
+                
+                <!-- 语言选择 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="%settings.language" prefWidth="120"/>
+                    <ComboBox fx:id="languageCombo" prefWidth="200">
+                        <items>
+                            <FXCollections fx:factory="observableArrayList">
+                                <String fx:value="简体中文"/>
+                                <String fx:value="English"/>
+                            </FXCollections>
+                        </items>
+                    </ComboBox>
+                </HBox>
+                
+                <!-- 主题选择 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="%settings.theme" prefWidth="120"/>
+                    <ComboBox fx:id="themeCombo" prefWidth="200"/>
+                </HBox>
+                
+                <!-- 字体大小 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="%settings.font.size" prefWidth="120"/>
+                    <Spinner fx:id="fontSizeSpinner" 
+                             min="10" max="24" amountToStepBy="1"
+                             prefWidth="200"
+                             editable="true"/>
+                </HBox>
+            </VBox>
+        </TitledPane>
+        
+        <!-- 窗口布局 -->
+        <TitledPane text="%settings.window.layout" expanded="false" styleClass="settings-section">
+            <VBox spacing="15">
+                <padding>
+                    <Insets top="10" right="10" bottom="10" left="10"/>
+                </padding>
+                
+                <!-- 启动时打开的页面 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="%settings.startup.page" prefWidth="120"/>
+                    <ComboBox fx:id="startupPageCombo" prefWidth="200"/>
+                </HBox>
+                
+                <!-- 侧边栏宽度 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="%settings.sidebar.width" prefWidth="120"/>
+                    <Slider fx:id="sidebarWidthSlider" 
+                            min="150" max="400" majorTickUnit="50"
+                            showTickLabels="true" showTickMarks="true"
+                            prefWidth="200"/>
+                </HBox>
+            </VBox>
+        </TitledPane>
+        
+        <!-- 其他设置 -->
+        <TitledPane text="%settings.other" expanded="false" styleClass="settings-section">
+            <VBox spacing="15">
+                <padding>
+                    <Insets top="10" right="10" bottom="10" left="10"/>
+                </padding>
+                
+                <!-- 自动保存 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <CheckBox fx:id="autoSaveCheck" text="%settings.auto.save" selected="true"/>
+                </HBox>
+                
+                <!-- 开机自启 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <CheckBox fx:id="autoStartCheck" text="%settings.auto.start"/>
+                </HBox>
+            </VBox>
+        </TitledPane>
+    </children>
+</VBox>

@@ -1,0 +1,51 @@
+/* ============================================================
+   AIShell Design Tokens — Light / 白色版 (V1)
+   与 theme-components.css 搭配加载
+   ============================================================ */
+.root {
+    -fx-app-bg:           #F4F6F8;
+    -fx-panel-bg:         #FFFFFF;
+    -fx-elevated-bg:      #EEF1F5;
+    -fx-hover-bg:         #E4E9EF;
+    -fx-sidebar-bg:       #FFFFFF;
+
+    -fx-border-default:   #D5DCE3;
+    -fx-border-strong:    #B8C2CC;
+
+    -fx-text-primary:     #1F2328;
+    -fx-text-secondary:   #5B6673;
+    -fx-text-disabled:    #8B95A3;
+    -fx-text-inverse:     #FFFFFF;
+
+    -fx-primary-color:    #0969DA;
+    -fx-primary-hover:    #218BFF;
+    -fx-ai-color:         #8250DF;
+    -fx-success-color:    #1A7F37;
+    -fx-warning-color:    #9A6700;
+    -fx-danger-color:     #CF222E;
+    -fx-info-color:       #0969DA;
+
+    /* 兼容旧变量名 */
+    -fx-accent-color:     #0969DA;
+    -fx-secondary-color:  #218BFF;
+    -fx-content-bg:       #FFFFFF;
+    -fx-light-bg:         #EEF1F5;
+    -fx-dark-bg:          #F4F6F8;
+    -fx-border-color:     #D5DCE3;
+    -fx-hover-color:      #E4E9EF;
+    -fx-selected-color:   #0969DA;
+
+    -fx-ui-font: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-mono-font: "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New", monospace;
+
+    -fx-radius-sm: 4px;
+    -fx-radius-md: 6px;
+
+    -fx-code-bg: #F6F8FA;
+}
+
+.root {
+    -fx-background-color: -fx-app-bg;
+    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+}

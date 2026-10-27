@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<!--
+  终端面板
+  - Terminal 是主工作区，右侧 Agent 为协作面板，默认打开
+  - Agent 宽度可拖动并记忆；低频终端操作收纳在更多菜单
+-->
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.TerminalPanelController"
+      styleClass="terminal-panel"
+      VBox.vgrow="ALWAYS">
+    <children>
+        <HBox alignment="CENTER_LEFT" spacing="4" styleClass="terminal-toolbar" minHeight="36">
+            <children>
+                <Button text="＋ 新终端" onAction="#createNewTab" styleClass="toolbar-button" mnemonicParsing="false"/>
+                <Button text="↻ 重连" onAction="#attemptReconnection" styleClass="toolbar-button" mnemonicParsing="false"/>
+                <Button text="清屏" onAction="#clearScreen" styleClass="toolbar-button" mnemonicParsing="false"/>
+                <Button text="Agent" onAction="#toggleAgentWorkspace" styleClass="nav-item" mnemonicParsing="false">
+                    <tooltip><Tooltip text="显示/收起右侧 AI Agent 工作区"/></tooltip>
+                </Button>
+                <Region HBox.hgrow="ALWAYS"/>
+                <MenuButton text="更多" styleClass="toolbar-button" mnemonicParsing="false">
+                    <items>
+                        <MenuItem text="复制" onAction="#copySelection"/>
+                        <MenuItem text="粘贴" onAction="#pasteContent"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="隧道" onAction="#showPortForwarding"/>
+                        <MenuItem text="主题" onAction="#changeTheme"/>
+                        <MenuItem text="终端设置" onAction="#showSettings"/>
+                    </items>
+                </MenuButton>
+            </children>
+        </HBox>
+
+        <!-- Terminal | Agent：终端绝对优先，Agent 可拖动收放 -->
+        <SplitPane fx:id="terminalSplitPane" dividerPositions="0.76" VBox.vgrow="ALWAYS"
+                   styleClass="terminal-split-pane">
+            <items>
+                <TabPane fx:id="terminalTabPane"
+                         minWidth="480"
+                         tabClosingPolicy="ALL_TABS"
+                         styleClass="terminal-tab-pane"/>
+                <VBox fx:id="agentWorkspaceHost" visible="true" managed="true"
+                      styleClass="agent-workspace-host" minWidth="280" prefWidth="360">
+                    <children>
+                        <HBox alignment="CENTER_LEFT" spacing="8" styleClass="panel-head" minHeight="36">
+                            <Label text="AI Agent" styleClass="ai-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button text="×" onAction="#toggleAgentWorkspace" styleClass="nav-item" mnemonicParsing="false"
+                                    accessibleText="隐藏 AI Agent"/>
+                        </HBox>
+                        <fx:include fx:id="agentWorkspace" source="agent-workspace.fxml" VBox.vgrow="ALWAYS"/>
+                    </children>
+                </VBox>
+            </items>
+        </SplitPane>
+    </children>
+</VBox>

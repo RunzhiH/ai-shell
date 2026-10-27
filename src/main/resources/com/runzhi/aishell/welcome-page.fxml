@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.WelcomePageController"
+      styleClass="welcome-page"
+      alignment="CENTER"
+      spacing="28"
+      >
+    
+    <padding>
+        <Insets bottom="40.0" left="40.0" right="40.0" top="40.0"/>
+    </padding>
+    
+    <!-- 欢迎标题 -->
+    <VBox alignment="CENTER" spacing="12" VBox.vgrow="NEVER">
+        <Label text="AIShell" styleClass="welcome-title">
+            <font>
+                <Font size="48.0"/>
+            </font>
+        </Label>
+        <Label text="智能 SSH 运维工作台" styleClass="welcome-subtitle">
+            <font>
+                <Font size="20.0"/>
+            </font>
+        </Label>
+    </VBox>
+    
+    <!-- 快速操作 -->
+    <HBox spacing="30" alignment="CENTER">
+        <!-- 新建连接 -->
+        <VBox styleClass="action-card" alignment="CENTER" spacing="12" prefWidth="200">
+            <Label text="" styleClass="action-icon">
+                <font>
+                    <Font size="36.0"/>
+                </font>
+            </Label>
+            <Label text="新建 SSH 连接" styleClass="action-title"/>
+            <Button text="立即连接" onAction="#newConnection" 
+                    styleClass="primary-button, action-button"/>
+        </VBox>
+        
+        <!-- AI 助手 -->
+        <VBox styleClass="action-card" alignment="CENTER" spacing="12" prefWidth="200">
+            <Label text="" styleClass="action-icon">
+                <font>
+                    <Font size="36.0"/>
+                </font>
+            </Label>
+            <Label text="AI 助手" styleClass="action-title"/>
+            <Button text="开始对话" onAction="#openAIAssistant" 
+                    styleClass="secondary-button, action-button"/>
+        </VBox>
+    </HBox>
+    
+    <!-- 底部提示 -->
+    <Label text="使用自然语言描述需求，AI 自动生成命令" 
+           styleClass="tip-text" wrapText="true" opacity="0.6"/>
+    
+</VBox>

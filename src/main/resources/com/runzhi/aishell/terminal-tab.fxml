@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import org.fxmisc.richtext.InlineCssTextArea?>
+<?import java.lang.String?>
+<VBox xmlns:fx="http://javafx.com/fxml" fx:controller="com.runzhi.aishell.controller.TerminalTabController"
+      styleClass="terminal-panel"
+      VBox.vgrow="ALWAYS">
+    <!-- 连接信息显示区域 -->
+    <HBox fx:id="connectionInfoBar" visible="false" managed="false" 
+          styleClass="terminal-toolbar" spacing="12"
+          alignment="CENTER_LEFT">
+        <Label fx:id="connectionStatusLabel" styleClass="connection-info-label" 
+               textFill="#4ec9b0" text="●">
+            <tooltip>
+                <Tooltip fx:id="connectionStatusTooltip" text="未连接"/>
+            </tooltip>
+        </Label>
+        <Label fx:id="connectionHostLabel" styleClass="connection-info-label" 
+               textFill="#dcdcaa" text="">
+            <tooltip>
+                <Tooltip fx:id="hostTooltip" text="主机地址"/>
+            </tooltip>
+        </Label>
+        <Label fx:id="connectionUserLabel" styleClass="connection-info-label" 
+               textFill="#569cd6" text="">
+            <tooltip>
+                <Tooltip fx:id="userTooltip" text="用户名"/>
+            </tooltip>
+        </Label>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="reconnectButton" text="重连" onAction="#reconnectToServer" 
+                styleClass="toolbar-button">
+            <tooltip>
+                <Tooltip text="重新连接"/>
+            </tooltip>
+        </Button>
+    </HBox>
+    
+    <!-- 终端输出区域 -->
+    <InlineCssTextArea fx:id="terminalOutput"
+                       styleClass="terminal-output"
+                       VBox.vgrow="ALWAYS"/>
+
+    <!-- 命令输入区域 -->
+    <VBox>
+        <HBox spacing="5" alignment="CENTER_LEFT" styleClass="command-input">
+            <Label text="模式:" styleClass="command-input"/>
+            <ChoiceBox fx:id="inputModeChoiceBox" value="普通模式"
+                       styleClass="command-input"
+                       HBox.hgrow="NEVER">
+                <String fx:value="普通模式"/>
+                <String fx:value="AI 模式"/>
+            </ChoiceBox>
+            <TextField fx:id="commandInput" HBox.hgrow="ALWAYS"
+                       styleClass="command-input"
+                       promptText="输入命令..."
+                       onAction="#onCommandInputAction"/>
+            <Button text="执行" onAction="#executeCurrentCommand" styleClass="command-button" fx:id="executeButton"/>
+            <Button text="重连" onAction="#reconnectToServer" styleClass="command-button" fx:id="reconnectButton"/>
+        </HBox>
+    </VBox>
+</VBox>

@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<!--
+  AIShell 主视图 — 对齐 HTML：Server | Terminal | AI
+  保留：MenuBar 全部系统入口、contentArea（viewSwitcher）、statusLabel、侧栏监控 Label
+  不删：Agent 工作区（在 terminal-panel 内 SplitPane）
+-->
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.MainViewController"
+      styleClass="main-view"
+      VBox.vgrow="ALWAYS">
+    <children>
+
+        <!-- 系统菜单（保留，功能不丢） -->
+        <MenuBar VBox.vgrow="NEVER">
+            <menus>
+                <Menu text="文件">
+                    <items>
+                        <MenuItem text="新建连接配置…" onAction="#newConnection"/>
+                        <MenuItem text="打开配置" onAction="#openConfig"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="导入连接" onAction="#handleImportConnections"/>
+                        <MenuItem text="导出连接" onAction="#handleExportConnections"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="设置" onAction="#openSettings"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="退出" onAction="#exitApplication"/>
+                    </items>
+                </Menu>
+                <Menu text="连接">
+                    <items>
+                        <MenuItem text="打开连接管理" onAction="#connectToServer"/>
+                        <MenuItem text="重连所有 SSH 终端" onAction="#reconnectAllTerminals"/>
+                        <MenuItem text="断开连接" onAction="#disconnectFromServer"/>
+                    </items>
+                </Menu>
+                <Menu text="视图">
+                    <items>
+                        <MenuItem text="终端" onAction="#openTerminal"/>
+                        <MenuItem text="监控面板" onAction="#openMonitor"/>
+                        <MenuItem text="高级监控图表" onAction="#openAdvancedMonitorCharts"/>
+                        <MenuItem text="文件管理" onAction="#openFileTransfer"/>
+                        <MenuItem text="系统信息" onAction="#openSystemInfo"/>
+                        <SeparatorMenuItem/>
+                        <MenuItem text="书签面板" onAction="#openBookmarkPanel"/>
+                        <MenuItem text="命令历史" onAction="#openCommandHistory"/>
+                    </items>
+                </Menu>
+                <Menu text="AI">
+                    <items>
+                        <MenuItem text="AI 助手" onAction="#openAIAssistant"/>
+                    </items>
+                </Menu>
+                <Menu text="帮助">
+                    <items>
+                        <MenuItem text="支持项目…" onAction="#openDonation"/>
+                        <MenuItem text="关于" onAction="#openAbout"/>
+                    </items>
+                </Menu>
+            </menus>
+        </MenuBar>
+
+        <!-- 顶栏：导航 + 当前连接 + 主操作（HTML 同款） -->
+        <HBox styleClass="topbar" spacing="8" alignment="CENTER_LEFT" minHeight="56" prefHeight="56">
+            <children>
+                <Label text="AIShell" styleClass="brand-name"/>
+                <Label text="SSH + AI" styleClass="brand-tag"/>
+                <HBox spacing="2" styleClass="top-nav" alignment="CENTER_LEFT">
+                    <Button fx:id="navConnections" text="连接" onAction="#openConnectionList" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button fx:id="navTerminal" text="终端" onAction="#openTerminal" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button fx:id="navFiles" text="文件管理" onAction="#openFileTransfer" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button fx:id="navMonitor" text="监控" onAction="#openMonitor" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button fx:id="navAI" text="AI" onAction="#openAIAssistant" styleClass="nav-item" mnemonicParsing="false"/>
+                </HBox>
+                <Region HBox.hgrow="ALWAYS"/>
+                <HBox spacing="6" alignment="CENTER_LEFT">
+                    <Label text="●" fx:id="hostStatusDot" style="-fx-text-fill: -fx-success-color;"/>
+                    <Label text="当前连接" styleClass="current-host-label"/>
+                    <Label fx:id="currentHostLabel" text="未连接" styleClass="current-host-value" maxWidth="240" textOverrun="CENTER_ELLIPSIS"/>
+                </HBox>
+                <Button fx:id="btnToggleServer" text="服务器" onAction="#toggleServerPanel" styleClass="nav-item" mnemonicParsing="false"/>
+                <Button fx:id="btnTheme" text="深色" onAction="#toggleTheme" styleClass="nav-item" mnemonicParsing="false"/>
+                <Button text="+ 新建连接" onAction="#newConnection" styleClass="primary-button" mnemonicParsing="false"/>
+                <Button text="设置" onAction="#openSettings" styleClass="nav-item" mnemonicParsing="false"/>
+            </children>
+        </HBox>
+
+        <!-- 主工作区：Server | Terminal | AI Agent；终端与 Agent 的比例可拖动并记忆 -->
+        <SplitPane fx:id="mainSplitPane" orientation="HORIZONTAL" dividerPositions="0.14"
+                   VBox.vgrow="ALWAYS" styleClass="main-split-pane">
+            <items>
+
+                <!-- 左：服务器 + 监控概览 -->
+                <VBox fx:id="serverPanel" styleClass="main-sidebar"
+                      minWidth="224" prefWidth="248" maxWidth="340"
+                      HBox.hgrow="NEVER" managed="true" visible="true">
+                    <children>
+                        <HBox styleClass="panel-head" alignment="CENTER_LEFT" spacing="6">
+                            <Label text="服务器" styleClass="panel-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="btnCollapseServer" text="‹" onAction="#toggleServerPanel"
+                                    styleClass="nav-item" mnemonicParsing="false"/>
+                        </HBox>
+
+                        <VBox fx:id="serverContent" VBox.vgrow="NEVER" prefHeight="160" minHeight="80">
+                            <padding>
+                                <Insets top="8" right="8" bottom="4" left="8"/>
+                            </padding>
+                            <children>
+                                <Label text="正在加载服务器…"
+                                       wrapText="true"
+                                       style="-fx-text-fill: -fx-text-secondary;"/>
+                            </children>
+                        </VBox>
+
+                        <Separator/>
+
+                        <VBox styleClass="system-info-panel" spacing="10">
+                            <Label text="系统概览" styleClass="sidebar-section-title"/>
+                            <HBox alignment="CENTER_LEFT" spacing="5">
+                                <Label text="●" styleClass="status-indicator"/>
+                                <Label text="当前主机资源" styleClass="status-label"/>
+                            </HBox>
+                            <HBox>
+                                <Label text="CPU" styleClass="system-info-label"/>
+                                <Label fx:id="cpuLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                            </HBox>
+                            <HBox>
+                                <Label text="内存" styleClass="system-info-label"/>
+                                <Label fx:id="memoryLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                            </HBox>
+                            <HBox>
+                                <Label text="负载" styleClass="system-info-label"/>
+                                <Label fx:id="loadLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                            </HBox>
+                        </VBox>
+                        <TitledPane text="更多系统信息" expanded="false" VBox.vgrow="ALWAYS"
+                                    styleClass="sidebar-details">
+                            <content>
+                                <VBox spacing="8" styleClass="sidebar-details-content">
+                                    <HBox>
+                                        <Label text="运行时间" styleClass="system-info-label"/>
+                                        <Label fx:id="uptimeLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                    </HBox>
+                                    <HBox>
+                                        <Label text="交换空间" styleClass="system-info-label"/>
+                                        <Label fx:id="swapLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                    </HBox>
+                                    <Separator/>
+                                    <Label text="磁盘" styleClass="sidebar-section-title"/>
+                                    <TableView fx:id="storageTable" prefHeight="150" VBox.vgrow="ALWAYS" styleClass="storage-table">
+                                        <columns>
+                                            <TableColumn fx:id="pathColumn" text="路径" prefWidth="100.0"/>
+                                            <TableColumn fx:id="sizeColumn" text="可用/大小" prefWidth="90.0"/>
+                                        </columns>
+                                        <columnResizePolicy>
+                                            <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                                        </columnResizePolicy>
+                                    </TableView>
+                                </VBox>
+                            </content>
+                        </TitledPane>
+                    </children>
+                </VBox>
+
+                <!-- Terminal 与右侧 Agent 在终端视图内组成可调分栏 -->
+                <StackPane fx:id="contentArea" styleClass="terminal-panel"
+                           HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"/>
+            </items>
+        </SplitPane>
+    </children>
+
+    <BorderPane styleClass="status-bar" minHeight="32" prefHeight="32">
+        <left>
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Label fx:id="statusTerminalTab" text="Terminal" styleClass="status-label"/>
+                <Label text="·" styleClass="status-label"/>
+                <Button fx:id="btnFilesDrawer" text="SFTP 抽屉 ↑" onAction="#toggleFilesDrawer"
+                        styleClass="status-item" mnemonicParsing="false"/>
+            </HBox>
+        </left>
+        <center>
+            <HBox spacing="10" alignment="CENTER">
+                <Label text="目标" styleClass="status-label"/>
+                <Label fx:id="statusHostLabel" text="—" styleClass="status-label"/>
+                <Label text="健康" styleClass="status-label"/>
+                <Label fx:id="statusHealthLabel" text="就绪" styleClass="status-ok"/>
+                <Label text="Agent" styleClass="status-label"/>
+                <Label fx:id="statusAiLabel" text="就绪" styleClass="status-ai"/>
+            </HBox>
+        </center>
+        <right>
+            <Label fx:id="statusLabel" text="就绪" styleClass="status-label"
+                   BorderPane.alignment="CENTER_RIGHT"/>
+        </right>
+    </BorderPane>
+</VBox>

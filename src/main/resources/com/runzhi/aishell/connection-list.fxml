@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.runzhi.aishell.controller.ConnectionListController" styleClass="connection-list-panel">
+    <children>
+        <VBox spacing="4" styleClass="page-heading"><Label text="连接管理" styleClass="page-title"/><Label text="管理服务器，快速进入终端工作区" styleClass="page-description"/></VBox>
+        <!-- 工具栏 -->
+        <FlowPane alignment="CENTER_LEFT" hgap="8" vgap="8" VBox.vgrow="NEVER" styleClass="toolbar">
+            <children>
+                <Button text="新建连接" onAction="#handleNewConnection" styleClass="primary-button">
+                    <tooltip>
+                        <Tooltip text="创建新的SSH连接配置" />
+                    </tooltip>
+                </Button>
+                <Button text="编辑" onAction="#handleEditConnection">
+                    <tooltip>
+                        <Tooltip text="编辑选中的连接配置" />
+                    </tooltip>
+                </Button>
+                <Button text="删除" onAction="#handleDeleteConnection" styleClass="danger-button">
+                    <tooltip>
+                        <Tooltip text="删除选中的连接配置" />
+                    </tooltip>
+                </Button>
+                <Separator orientation="VERTICAL" prefHeight="25.0" />
+                
+                <Button fx:id="importButton" text="导入" onAction="#handleImportConnections">
+                    <tooltip>
+                        <Tooltip text="从文件导入连接配置" />
+                    </tooltip>
+                </Button>
+                <Button fx:id="exportButton" text="导出" onAction="#handleExportConnections">
+                    <tooltip>
+                        <Tooltip text="将连接配置导出到文件" />
+                    </tooltip>
+                </Button>
+                
+                <Separator orientation="VERTICAL" prefHeight="25.0" />
+                
+                <Button text="连接" onAction="#handleConnect" styleClass="connect-button">
+                    <tooltip>
+                        <Tooltip text="连接到选中的服务器" />
+                    </tooltip>
+                </Button>
+                <Button text="测试连接" onAction="#handleTestConnection">
+                    <tooltip>
+                        <Tooltip text="测试选中的连接配置" />
+                    </tooltip>
+                </Button>
+                
+                <Label text="搜索:" styleClass="search-label" />
+                <TextField fx:id="searchField" promptText="按名称、主机或用户名搜索..." prefColumnCount="15" HBox.hgrow="NEVER" styleClass="search-field" />
+            </children>
+        </FlowPane>
+        
+        <!-- 连接表格 -->
+        <TableView fx:id="connectionTable" VBox.vgrow="ALWAYS" styleClass="table-view">
+            <columns>
+                <TableColumn fx:id="nameColumn" text="配置名称" prefWidth="150.0" />
+                <TableColumn fx:id="hostColumn" text="主机地址" prefWidth="150.0" />
+                <TableColumn fx:id="portColumn" text="端口" prefWidth="70.0" />
+                <TableColumn fx:id="usernameColumn" text="用户名" prefWidth="100.0" />
+                <TableColumn fx:id="protocolColumn" text="协议" prefWidth="80.0" />
+                <TableColumn fx:id="lastUsedColumn" text="最后使用" prefWidth="120.0" />
+                <TableColumn fx:id="statusColumn" text="状态" prefWidth="80.0" />
+            </columns>
+            <columnResizePolicy>
+                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY" />
+            </columnResizePolicy>
+        </TableView>
+        
+        <!-- 底部统计信息栏 -->
+        <HBox alignment="CENTER_LEFT" spacing="15.0" VBox.vgrow="NEVER" styleClass="stats-bar">
+            <children>
+                <Label fx:id="totalCountLabel" text="总计: 0" styleClass="stat-label" />
+                <Label fx:id="connectedCountLabel" text="已连接: 0" styleClass="stat-label" />
+                <Label fx:id="disconnectedCountLabel" text="未连接: 0" styleClass="stat-label" />
+                <Region HBox.hgrow="ALWAYS" />
+                <Label fx:id="lastUpdatedLabel" text="最后更新: --" styleClass="stat-label" />
+            </children>
+        </HBox>
+    </children>
+</VBox>

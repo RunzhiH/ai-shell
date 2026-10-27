@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.collections.FXCollections?>
+<?import java.lang.String?>
+
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.SettingsSSHController"
+      spacing="20" styleClass="settings-page">
+    
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+    
+    <!-- SSH 连接默认值 -->
+    <TitledPane text="SSH 连接默认值" expanded="true" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 默认端口 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="默认端口:" prefWidth="120"/>
+                <Spinner fx:id="defaultPortSpinner" 
+                         min="1" max="65535" initialValue="22"
+                         amountToStepBy="1"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 默认用户名 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="默认用户名:" prefWidth="120"/>
+                <TextField fx:id="defaultUsernameField" promptText="root" prefWidth="200"/>
+            </HBox>
+            
+            <!-- 认证方式 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="默认认证:" prefWidth="120"/>
+                <ComboBox fx:id="authMethodCombo" prefWidth="200">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="密码认证"/>
+                            <String fx:value="密钥认证"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+            </HBox>
+        </VBox>
+    </TitledPane>
+
+    <TitledPane text="跳板机 / ProxyJump" expanded="false" styleClass="settings-section">
+        <VBox spacing="12">
+            <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+            <CheckBox fx:id="useJumpHostCheck" text="通过跳板机连接目标服务器"/>
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="跳板主机:" prefWidth="120"/>
+                <TextField fx:id="jumpHostField" promptText="bastion.example.com" prefWidth="260"/>
+            </HBox>
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="跳板端口:" prefWidth="120"/>
+                <Spinner fx:id="jumpPortSpinner" min="1" max="65535" initialValue="22" prefWidth="160" editable="true"/>
+            </HBox>
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="跳板用户名:" prefWidth="120"/>
+                <TextField fx:id="jumpUsernameField" prefWidth="260"/>
+            </HBox>
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="跳板密码:" prefWidth="120"/>
+                <PasswordField fx:id="jumpPasswordField" prefWidth="260"/>
+            </HBox>
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="跳板私钥:" prefWidth="120"/>
+                <TextField fx:id="jumpPrivateKeyField" prefWidth="300"/>
+                <Button text="浏览..." onAction="#handleBrowseJumpPrivateKey"/>
+            </HBox>
+            <Label text="密码和私钥至少填写一项；HTTP/SOCKS 代理会应用在跳板机连接上。" styleClass="text-secondary"/>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 超时和保活 -->
+    <TitledPane text="超时和保活" expanded="true" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 连接超时 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="连接超时 (秒):" prefWidth="120"/>
+                <Spinner fx:id="connectTimeoutSpinner" 
+                         min="1" max="300" initialValue="30"
+                         amountToStepBy="5"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 读取超时 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="读取超时 (秒):" prefWidth="120"/>
+                <Spinner fx:id="readTimeoutSpinner" 
+                         min="1" max="600" initialValue="60"
+                         amountToStepBy="10"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 保活间隔 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="保活间隔 (秒):" prefWidth="120"/>
+                <Spinner fx:id="keepAliveIntervalSpinner" 
+                         min="0" max="300" initialValue="30"
+                         amountToStepBy="10"
+                         prefWidth="200"
+                         editable="true"/>
+                <Label text="(0 表示禁用)" styleClass="text-secondary"/>
+            </HBox>
+            
+            <!-- 自动重连 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="autoReconnectCheck" text="启用自动重连" selected="true"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 密钥管理 -->
+    <TitledPane text="SSH 密钥管理" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 私钥文件 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="私钥文件:" prefWidth="120"/>
+                <TextField fx:id="privateKeyField" promptText="~/.ssh/id_rsa" prefWidth="300"/>
+                <Button text="浏览..." onAction="#handleBrowsePrivateKey"/>
+            </HBox>
+            
+            <!-- 公钥文件 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="公钥文件:" prefWidth="120"/>
+                <TextField fx:id="publicKeyField" promptText="~/.ssh/id_rsa.pub" prefWidth="300"/>
+                <Button text="浏览..." onAction="#handleBrowsePublicKey"/>
+            </HBox>
+            
+            <!-- 密钥密码短语 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="密钥密码:" prefWidth="120"/>
+                <PasswordField fx:id="keyPassphraseField" prefWidth="200"/>
+            </HBox>
+            
+            <!-- 密钥列表 -->
+            <VBox spacing="5">
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="已加载密钥:" styleClass="text-secondary"/>
+                </HBox>
+                <ListView fx:id="loadedKeysList" prefHeight="100"/>
+                <HBox spacing="10">
+                    <Button text="添加密钥" onAction="#handleAddKey" styleClass="secondary-button"/>
+                    <Button text="移除密钥" onAction="#handleRemoveKey" styleClass="danger-button"/>
+                </HBox>
+            </VBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 代理设置 -->
+    <TitledPane text="代理设置" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 使用代理 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="useProxyCheck" text="使用代理服务器"/>
+            </HBox>
+            
+            <!-- 代理类型 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="代理类型:" prefWidth="120"/>
+                <ComboBox fx:id="proxyTypeCombo" prefWidth="200">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="HTTP"/>
+                            <String fx:value="SOCKS4"/>
+                            <String fx:value="SOCKS5"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+            </HBox>
+            
+            <!-- 代理主机 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="代理主机:" prefWidth="120"/>
+                <TextField fx:id="proxyHostField" promptText="proxy.example.com" prefWidth="200"/>
+            </HBox>
+            
+            <!-- 代理端口 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="代理端口:" prefWidth="120"/>
+                <Spinner fx:id="proxyPortSpinner" 
+                         min="1" max="65535" initialValue="8080"
+                         amountToStepBy="1"
+                         prefWidth="200"
+                         editable="true"/>
+            </HBox>
+            
+            <!-- 代理认证 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="proxyAuthCheck" text="需要认证"/>
+            </HBox>
+            
+            <VBox fx:id="proxyAuthPanel" spacing="10" visible="false" managed="false">
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="用户名:" prefWidth="120"/>
+                    <TextField fx:id="proxyUserField" prefWidth="200"/>
+                </HBox>
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="密码:" prefWidth="120"/>
+                    <PasswordField fx:id="proxyPassField" prefWidth="200"/>
+                </HBox>
+            </VBox>
+        </VBox>
+    </TitledPane>
+    
+    <!-- 高级选项 -->
+    <TitledPane text="高级选项" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            
+            <!-- 压缩 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="compressionCheck" text="启用 SSH 压缩"/>
+            </HBox>
+            
+            <!-- 严格主机密钥检查 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="strictHostKeyCheck" text="严格主机密钥检查（安全要求，始终启用）" selected="true" disable="true"/>
+            </HBox>
+            
+            <!-- 日志级别 -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="日志级别:" prefWidth="120"/>
+                <ComboBox fx:id="logLevelCombo" prefWidth="200">
+                    <items>
+                        <FXCollections fx:factory="observableArrayList">
+                            <String fx:value="ERROR"/>
+                            <String fx:value="WARN"/>
+                            <String fx:value="INFO"/>
+                            <String fx:value="DEBUG"/>
+                        </FXCollections>
+                    </items>
+                </ComboBox>
+            </HBox>
+        </VBox>
+    </TitledPane>
+    
+</VBox>

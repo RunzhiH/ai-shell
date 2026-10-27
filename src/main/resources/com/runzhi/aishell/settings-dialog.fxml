@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.SettingsDialogController"
+      fx:id="settingsDialog"
+      spacing="0" styleClass="settings-dialog-container">
+    
+    <children>
+        <VBox spacing="4" styleClass="page-heading"><Label text="%settings.title" styleClass="page-title"/><Label text="%settings.description" styleClass="page-description"/></VBox>
+        <!-- 设置对话框主体 -->
+        <SplitPane orientation="HORIZONTAL" VBox.vgrow="ALWAYS"
+                   dividerPositions="0.22"
+                   styleClass="settings-panel">
+            <items>
+                <!-- 左侧：设置分类导航树 -->
+                <TreeView fx:id="settingsTree" minWidth="160" prefWidth="180" maxWidth="220"
+                          styleClass="settings-tree">
+                </TreeView>
+                
+                <!-- 右侧：设置内容区 -->
+                <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-content-scroll">
+                    <StackPane fx:id="contentContainer" 
+                               styleClass="settings-content">
+                    </StackPane>
+                </ScrollPane>
+            </items>
+        </SplitPane>
+        
+    </children>
+</VBox>
