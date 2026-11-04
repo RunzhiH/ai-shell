@@ -14,6 +14,9 @@ import java.util.List;
 
 public interface SSHService {
 
+    /** Resolve a browser path on the SFTP worker; default keeps test/third-party services compatible. */
+    default String canonicalDirectoryForTab(String tabId,String path) throws Exception { return path; }
+
     /**
      * 断开所有标签连接
      */
@@ -98,6 +101,17 @@ public interface SSHService {
                            FileTransferService.ProgressCallback callback,
                            FileTransferService.OverwritePolicy overwritePolicy,
                            FileTransferService.TransferControl control) throws Exception;
+
+    /**
+     * 打包上传：把本地目录压成 zip 上传到远端并解压，最后清理压缩包。
+     *
+     * @param remoteDirPath 解压目标父目录（压缩包会解压到其下的同名目录）
+     * @return true 表示成功解压；false 表示已上传但远端没有可用解压工具
+     */
+    boolean uploadPackedFolderForTab(String tabId, String localFolderPath, String remoteDirPath,
+                                     FileTransferService.ProgressCallback callback,
+                                     FileTransferService.OverwritePolicy overwritePolicy,
+                                     FileTransferService.TransferControl control) throws Exception;
 
     /**
      * 下载文件
@@ -206,4 +220,22 @@ public interface SSHService {
      * 优雅地关闭服务，等待所有连接正常断开
      */
     void gracefulShutdown(long timeoutMs);
+
+    /**
+     * 某个保存的连接配置当前有多少个会话仍处于已连接状态。
+     * 同一配置允许打开多个标签；只要至少一个在线，就表示该配置存在活动连接。
+     */
+    default int activeSessionCount(ConnectionParams params) {
+        return 0;
+    }
+
+    /**
+     * 订阅会话状态变化（连接建立、失败、断开、标签关闭）。
+     * 视图据此刷新状态，避免各自轮询或维护副本。
+     */
+    default void addSessionStateListener(Runnable listener) {
+    }
+
+    default void removeSessionStateListener(Runnable listener) {
+    }
 }

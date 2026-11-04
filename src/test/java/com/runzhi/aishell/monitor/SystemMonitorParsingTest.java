@@ -3,6 +3,7 @@ package com.runzhi.aishell.monitor;
 import com.runzhi.aishell.monitor.domain.SystemMetrics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -23,6 +24,7 @@ class SystemMonitorParsingTest {
         private final Map<String, String> outputs = new HashMap<>();
         private final Map<String, java.util.ArrayDeque<String>> sequences = new HashMap<>();
         private boolean connected = true;
+        private int commandCount;
 
         void put(String command, String output) {
             outputs.put(command, output);
@@ -40,8 +42,13 @@ class SystemMonitorParsingTest {
             this.connected = connected;
         }
 
+        int commandCount() {
+            return commandCount;
+        }
+
         @Override
         public String executeCommand(String command) {
+            commandCount++;
             java.util.ArrayDeque<String> queue = sequences.get(command);
             if (queue != null) {
                 return queue.size() > 1 ? queue.poll() : queue.peek();
@@ -185,6 +192,70 @@ class SystemMonitorParsingTest {
         assertNotNull(metrics, "未连接时应返回默认对象而非抛异常");
     }
 
+    /** 真实的 /proc/net/dev 片段：两行表头 + lo + 两个物理接口（8 列 rx 紧跟 8 列 tx） */
+    private static final String NET_DEV_OUTPUT =
+            "Inter-|   Receive                                                |  Transmit\n" +
+            " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n" +
+            "    lo:    1000      10    0    0    0     0          0         0     1000      10    0    0    0     0       0          0\n" +
+            "  eth0:    5000      20    0    0    0     0          0         0     7000      30    0    0    0     0       0          0\n" +
+            " ens33:    2000      10    0    0    0     0          0         0     3000      15    0    0    0     0       0          0\n";
+
+    @Test
+    @DisplayName("/proc/net/dev 的表头行不被当作接口行解析（回归：For input string: \"|bytes\"）")
+    void skipsProcNetDevHeaderRows() {
+        FakeDataSourceProvider provider = new FakeDataSourceProvider();
+        provider.put("cat /proc/net/dev", NET_DEV_OUTPUT);
+
+        SystemMetrics metrics = collectMetrics(provider);
+
+        // 只累计非 lo 接口：eth0 (5000/7000) + ens33 (2000/3000)，表头的 "|bytes" 不应进入解析
+        assertEquals(7000L, metrics.getTotalRxBytes(), "接收字节数应为非 lo 接口之和");
+        assertEquals(10000L, metrics.getTotalTxBytes(), "发送字节数应为非 lo 接口之和");
+    }
+
+    @Test
+    @DisplayName("/proc/net/dev 列数不足的接口行被跳过，不会误读错位的列")
+    void skipsTruncatedProcNetDevLine() {
+        FakeDataSourceProvider provider = new FakeDataSourceProvider();
+        // eth1 只有 rx 的 8 列，缺少 tx 的 8 列：旧实现会从 parts[9] 取到 rx 末列当发送量
+        provider.put("cat /proc/net/dev",
+                "Inter-|   Receive                                                |  Transmit\n" +
+                " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n" +
+                "  eth1:    1234       1    0    0    0     0          0         0\n");
+
+        SystemMetrics metrics = collectMetrics(provider);
+
+        assertEquals(0L, metrics.getTotalRxBytes(), "残缺行不应贡献接收字节数");
+        assertEquals(0L, metrics.getTotalTxBytes(), "残缺行不应贡献发送字节数");
+    }
+
+    @Test
+    @DisplayName("/proc/net/dev 连续两次采样按增量计算上传下载速度")
+    void computesNetRateFromConsecutiveSamples() {
+        FakeDataSourceProvider provider = new FakeDataSourceProvider();
+        // 采样一作为基线，采样二 rx/tx 各增加 1024 字节
+        provider.putSequence("cat /proc/net/dev",
+                "Inter-|   Receive                                                |  Transmit\n" +
+                " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n" +
+                "  eth0:    1000      10    0    0    0     0          0         0     2000      20    0    0    0     0       0          0\n",
+                "Inter-|   Receive                                                |  Transmit\n" +
+                " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n" +
+                "  eth0:    2024      12    0    0    0     0          0         0     3024      22    0    0    0     0       0          0\n");
+
+        SystemMonitor monitor = new SystemMonitor(provider);
+        SystemMetrics baseline = monitor.getSystemMetrics();
+        assertNull(baseline.getNetUp(), "首次采样没有速率基线，不应给出速度");
+
+        SystemMetrics metrics = monitor.getSystemMetrics();
+
+        assertEquals(2024L, metrics.getTotalRxBytes(), "接收累计字节数");
+        assertEquals(3024L, metrics.getTotalTxBytes(), "发送累计字节数");
+        assertNotNull(metrics.getNetUp(), "第二次采样应算出上传速度");
+        assertNotNull(metrics.getNetDown(), "第二次采样应算出下载速度");
+        assertNotEquals("0 B", metrics.getNetUp(), "有增量时上传速度不应为 0");
+        assertNotEquals("0 B", metrics.getNetDown(), "有增量时下载速度不应为 0");
+    }
+
     @Test
     @DisplayName("所有命令返回空字符串时指标保持默认值")
     void handlesEmptyOutputsGracefully() {
@@ -198,4 +269,19 @@ class SystemMonitorParsingTest {
         assertEquals(0L, metrics.getUsedMemory(), "无输出时内存字段保持默认 0");
         assertEquals(0.0, metrics.getDiskUsage(), 0.001);
     }
+
+    @Test
+    @DisplayName("stopMonitoring 后不再发起新命令，关闭期间不产生 SSH 未连接错误")
+    void stopsIssuingCommandsAfterStopping() {
+        FakeDataSourceProvider provider = new FakeDataSourceProvider();
+        SystemMonitor monitor = new SystemMonitor(provider);
+        assertNotNull(monitor.getSystemMetrics(), "正常采样仍应工作");
+        int beforeStop = provider.commandCount();
+
+        monitor.stopMonitoring();
+
+        assertNull(monitor.getSystemMetrics(), "停止后不再采样");
+        assertEquals(beforeStop, provider.commandCount(), "停止后不得再向已断开的 SSH 会话发命令");
+    }
+
 }

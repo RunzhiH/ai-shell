@@ -55,7 +55,7 @@ public class AICommandProcessor {
                                            Consumer<String> feedback) {
         return AI_EXECUTOR.submit(() -> {
             try {
-                AIAdapter configured = AIConfigManager.getInstance().getCurrentAIAdapter();
+                AIAdapter configured = AIConfigManager.getInstance().getAgentAIAdapter();
                 aiAdapter = configured;
                 if (aiAdapter != null) {
                     var sshService = com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance().getSshService();
@@ -94,7 +94,7 @@ public class AICommandProcessor {
                                       Consumer<AgentDecision> callback, Consumer<String> feedback) {
         return AI_EXECUTOR.submit(() -> {
             try {
-                AIAdapter configured = AIConfigManager.getInstance().getCurrentAIAdapter();
+                AIAdapter configured = AIConfigManager.getInstance().getAgentAIAdapter();
                 if (configured == null) throw new IllegalStateException("AI服务未配置");
                 var ssh = com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance().getSshService();
                 if (ssh == null) throw new IllegalStateException("SSH service is not available");

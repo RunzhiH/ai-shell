@@ -7,6 +7,7 @@ package com.runzhi.aishell.controller;
 
 import com.runzhi.aishell.common.util.ControllerUtils;
 import com.runzhi.aishell.common.i18n.I18n;
+import com.runzhi.aishell.ssh.domain.ConnectionParams;
 import com.runzhi.aishell.ssh.domain.FileInfo;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -111,7 +112,27 @@ public class FileManagerPanelController extends BaseController implements Initia
     
     // SSH 服务和 Tab ID，用于获取当前连接的远程文件列表
     private com.runzhi.aishell.ssh.SSHService sshService;
-    private String currentTabId;
+    private volatile String currentTabId;
+    /** 已销毁的面板不再接收会话通知或异步文件列表。 */
+    private volatile boolean disposed;
+    /** 会话断开后立即清理旧列表，连接恢复时刷新同一绑定目标。 */
+    private final Runnable sessionStateListener = () -> Platform.runLater(() -> {
+        if (disposed) return;
+        refreshTargetDisplay();
+        if (this.panelVisible || !isCurrentTabConnected()) loadRemoteFiles();
+    });
+    /** 会话关闭后仍保留原目标名称，避免分离窗口失去归属。 */
+    private ConnectionParams boundTargetParams;
+    /** Current remote endpoint, always visible above its file table. */
+    @FXML private Label remoteSessionLabel;
+    /** Secondary action shown only in the embedded drawer; the standalone window is already detached. */
+    @FXML private Button openStandaloneButton;
+    /** Standalone windows keep the session captured at open time; embedded drawers keep their own tab. */
+    private boolean standalone;
+    private final javafx.beans.property.ReadOnlyStringWrapper targetDisplay =
+            new javafx.beans.property.ReadOnlyStringWrapper(I18n.tr("fm.target.none"));
+    private final javafx.beans.property.ReadOnlyStringWrapper targetTooltip =
+            new javafx.beans.property.ReadOnlyStringWrapper(I18n.tr("fm.target.none"));
     private Path localDirectory = Paths.get(System.getProperty("user.home"));
     private final ExecutorService transferExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "sftp-transfer-queue");
@@ -124,8 +145,122 @@ public class FileManagerPanelController extends BaseController implements Initia
             new com.runzhi.aishell.ssh.TransferQueueStore();
     private boolean recoveryChecked;
 
+    @FXML private VBox fileManagerArea;
+    @FXML private TabPane fileModes;
+    @FXML private Tab localBrowserTab,remoteBrowserTab,transferQueueTab;
+    @FXML private javafx.scene.layout.StackPane localTreeHost,remoteTreeHost,queueHost;
+    @FXML private Label localDirectoryLabel,remoteDirectoryLabel;
+    @FXML private javafx.scene.control.SplitPane localFileSplit,remoteFileSplit;
+    private com.runzhi.aishell.ui.DirectoryTree localTree,remoteTree;
+    private com.runzhi.aishell.ui.TransferQueueView queueView;
+    private final java.util.Map<String,String> remotePaths=new java.util.HashMap<>();
+    private final java.util.concurrent.atomic.AtomicInteger localGeneration=new java.util.concurrent.atomic.AtomicInteger();
+    private Path requestedLocalDirectory;
+    private volatile String currentTransferJobId;
+    private final java.util.Set<String> ownedQueueJobs=java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Successful paths are the sole source for file actions, even while a failed path remains in the editor. */
+    private String remoteDirectory() { return loadedRemotePath==null ? (pathField==null?"~":pathField.getText()) : loadedRemotePath; }
+    private void updateDirectoryLabels() {
+        String endpoint=sshService==null || currentTabId==null ? "—" : sshService.getUsernameForTab(currentTabId)+"@"+sshService.getHostForTab(currentTabId)+":"+endpointPort(sshService,currentTabId);
+        if(localDirectoryLabel!=null) {
+            String text=I18n.tr("fm.compact.uploadTarget",endpoint,remoteDirectory());
+            localDirectoryLabel.setText(text); localDirectoryLabel.setTooltip(new Tooltip(text));
+        }
+        if(remoteDirectoryLabel!=null) {
+            String text=I18n.tr("fm.compact.downloadTarget",localDirectory);
+            remoteDirectoryLabel.setText(text); remoteDirectoryLabel.setTooltip(new Tooltip(text));
+        }
+    }
+    private boolean retryEndpoint(com.runzhi.aishell.ssh.TransferQueueStore.Job job) {
+        return job!=null && activeTransferControl==null && sshService!=null && currentTabId!=null && isCurrentTabConnected()
+                && job.port()==endpointPort(sshService,currentTabId) && job.host().equals(sshService.getHostForTab(currentTabId))
+                && job.username().equals(sshService.getUsernameForTab(currentTabId));
+    }
+    private void initializeNavigation() {
+        if(localTreeHost==null) return;
+        compactDirectorySplit(localFileSplit,localTreeHost);
+        compactDirectorySplit(remoteFileSplit,remoteTreeHost);
+        var io=com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool();
+        localTree=new com.runzhi.aishell.ui.DirectoryTree(io,()->path->{
+            try(var children=Files.list(Paths.get(path))) {
+                return children.filter(child->Files.isDirectory(child,java.nio.file.LinkOption.NOFOLLOW_LINKS)).map(Path::toString).toList();
+            } catch(Exception failure) { throw new IllegalStateException(failure); }
+        },path->changeLocalDirectory(Paths.get(path)));
+        localTree.useContext("local",java.util.stream.Stream.concat(
+                java.util.stream.StreamSupport.stream(java.nio.file.FileSystems.getDefault().getRootDirectories().spliterator(),false).map(Path::toString),
+                Stream.of(localDirectory.toString())).distinct().toList());
+        remoteTree=new com.runzhi.aishell.ui.DirectoryTree(io,()->{
+            final var service=sshService; final String session=currentTabId;
+            return path->{
+                if(service==null || session==null) throw new IllegalStateException("No session");
+                try { String canonical=service.canonicalDirectoryForTab(session,path); String directory=canonical==null?path:canonical;
+                    return service.listFilesForTab(session,directory).stream().filter(this::isRemoteDirectory)
+                        .filter(file->!file.getName().equals(".") && !file.getName().equals(".."))
+                        .map(file->joinRemotePath(directory,file.getName())).toList(); }
+                catch(Exception failure) { throw new IllegalStateException(failure); }
+            };
+        },path->{ pathField.setText(path); navigateRemotePath(); });
+        remoteTree.useContext("none",List.of("/","~"));
+        localTreeHost.getChildren().setAll(localTree); remoteTreeHost.getChildren().setAll(remoteTree);
+        queueView=new com.runzhi.aishell.ui.TransferQueueView(transferQueueStore,this::retryEndpoint,
+                job->submitRecoveredJobs(List.of(job)),count->transferQueueTab.setText(I18n.tr("fm.phase.queueCount",count)));
+        queueHost.getChildren().setAll(queueView);
+        fileModes.getSelectionModel().select(remoteBrowserTab);
+        fileModes.getSelectionModel().selectedItemProperty().addListener((_,_,tab)->{updateDirectoryLabels(); if(queueView!=null) queueView.refresh();});
+        for(TextField field:List.of(localPathField,pathField)) field.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED,event->{
+            if(event.getCode()==javafx.scene.input.KeyCode.ESCAPE) {
+                field.setText(field==localPathField?localDirectory.toString():remoteDirectory()); event.consume();
+            }
+        });
+        fileManagerArea.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED,event->{
+            if(event.isControlDown() && !event.isShiftDown() && event.getCode()==javafx.scene.input.KeyCode.L) {
+                TextField field=fileModes.getSelectionModel().getSelectedItem()==localBrowserTab?localPathField:pathField;
+                field.requestFocus(); field.selectAll(); event.consume();
+            }
+        });
+        fileManagerArea.widthProperty().addListener((_,_,width)->{
+            localDateColumn.setVisible(width.doubleValue()>=650); remoteDateColumn.setVisible(width.doubleValue()>=650);
+            localTypeColumn.setVisible(width.doubleValue()>=500); remoteTypeColumn.setVisible(width.doubleValue()>=500);
+        });
+        updateDirectoryLabels();
+    }
+
+    /** Keep the navigator narrow in pixels when the drawer grows, while allowing divider dragging. */
+    private void compactDirectorySplit(javafx.scene.control.SplitPane split,javafx.scene.layout.Region tree) {
+        if(split==null) return;
+        javafx.scene.control.SplitPane.setResizableWithParent(tree,false);
+        boolean[] initialized={false};
+        split.widthProperty().addListener((_,_,width)->{
+            if(!initialized[0] && width.doubleValue()>0) {
+                initialized[0]=true;
+                split.setDividerPositions(Math.min(144,width.doubleValue()*0.24)/width.doubleValue());
+            }
+        });
+    }
+    @FXML private void localDetails() { details(localFileTable,localDirectory.toString()); }
+    @FXML private void remoteDetails() { details(remoteFileTable,remoteDirectory()); }
+    private void details(TableView<FileInfo> table,String parent) {
+        FileInfo file=table.getSelectionModel().getSelectedItem(); if(file==null) return;
+        Alert alert=new Alert(Alert.AlertType.INFORMATION,parent+"/"+file.getName()+"\n"+file.getSize()+"\n"+formatModifiedTime(file.getModifiedTime())+"\n"+formatPermission(file.getPermission()));
+        alert.setTitle(I18n.tr("fm.phase.details")); alert.setHeaderText(null); alert.showAndWait();
+    }
+    private void ownJob(String id) {
+        final var owner=activeTransferControl; ownedQueueJobs.add(id);
+        if(currentTransferJobId==null) currentTransferJobId=id;
+        transferQueueStore.registerCancel(id,()->{
+            if(activeTransferControl==owner && id.equals(currentTransferJobId)) {
+                owner.cancel(); Platform.runLater(()->{if(activeTransferControl==owner) cancelTransfer();});
+            }
+        });
+    }
+
     /** 拖拽悬停时加到远程面板上的高亮样式类 */
     private static final String DROP_TARGET_STYLE = "drop-target";
+
+    /** 远程列表的可见状态；空目录、加载中、未连接与失败必须可区分。 */
+    private enum RemoteState { DISCONNECTED, LOADING, EMPTY, FAILED, READY }
+    private Label remotePlaceholder;
 
     /** 防止刷新风暴：进行中标志 + 路径代际 + 去抖 */
     private volatile boolean remoteLoading;
@@ -139,6 +274,8 @@ public class FileManagerPanelController extends BaseController implements Initia
 
     public void setPanelVisible(boolean visible) {
         this.panelVisible = visible;
+        // 连接建立/重连会在面板仍收起时回调这里；目标标题必须同步，不能等展开才更新。
+        refreshTargetDisplay();
         if (visible) {
             requestRemoteRefresh(false);
         }
@@ -160,8 +297,6 @@ public class FileManagerPanelController extends BaseController implements Initia
         lastRequestedPath = directory;
         if (panelVisible) {
             requestRemoteRefresh(false);
-        } else {
-            loadedRemotePath = null;
         }
     }
 
@@ -201,8 +336,14 @@ public class FileManagerPanelController extends BaseController implements Initia
         // 设置表格数据
         remoteFileTable.setItems(remoteFiles);
         localFileTable.setItems(localFiles);
+        remotePlaceholder = new Label();
+        remotePlaceholder.setWrapText(true);
+        remotePlaceholder.setMaxWidth(420);
+        remotePlaceholder.getStyleClass().add("file-placeholder");
+        remoteFileTable.setPlaceholder(remotePlaceholder);
         remoteFileTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         localFileTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        setRemoteState(RemoteState.DISCONNECTED, I18n.tr("fm.remote.disconnected"));
         
         // 启用多选模式
         remoteFileTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
@@ -212,7 +353,6 @@ public class FileManagerPanelController extends BaseController implements Initia
             row.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2 && !row.isEmpty() && isRemoteDirectory(row.getItem())) {
                     pathField.setText(joinRemotePath(pathField.getText(), row.getItem().getName()));
-                    loadedRemotePath = null;
                     requestRemoteRefresh(true);
                 }
             });
@@ -245,11 +385,7 @@ public class FileManagerPanelController extends BaseController implements Initia
                 if (event.getClickCount() == 2 && !row.isEmpty()
                         && (row.getItem().getPermission() & 0040000) != 0) {
                     Path next = localDirectory.resolve(row.getItem().getName()).normalize();
-                    if (Files.isDirectory(next) && Files.isReadable(next)) {
-                        localDirectory = next;
-                        localPathField.setText(next.toString());
-                        loadLocalFiles();
-                    }
+                    changeLocalDirectory(next);
                 }
             });
             return row;
@@ -273,9 +409,10 @@ public class FileManagerPanelController extends BaseController implements Initia
         }
         if (localPathField != null) localPathField.setText(localDirectory.toString());
         
-        // 初始化状态
-        updateStatus(I18n.tr("fm.ready"));
+        // 初始化状态：未绑定会话时明确提示，而不是显示 Ready
+        updateStatus(I18n.tr("fm.remote.disconnected"));
         
+        initializeNavigation();
         // 加载本地文件列表
         loadLocalFiles();
     }
@@ -291,7 +428,7 @@ public class FileManagerPanelController extends BaseController implements Initia
         localNameColumn.setCellValueFactory(cell -> text(cell.getValue().getName()));
         localSizeColumn.setCellValueFactory(cell -> text(cell.getValue().getSize()));
         localDateColumn.setCellValueFactory(cell -> text(formatModifiedTime(cell.getValue().getModifiedTime())));
-        localTypeColumn.setCellValueFactory(cell -> text(formatPermission(cell.getValue().getPermission())));
+        localTypeColumn.setCellValueFactory(cell -> text(I18n.tr((cell.getValue().getPermission() & 0040000)!=0?"fm.phase.folder":"fm.phase.file")));
     }
 
     private static ReadOnlyStringWrapper text(String value) {
@@ -323,7 +460,7 @@ public class FileManagerPanelController extends BaseController implements Initia
                         ControllerUtils.showWarningAlert(I18n.tr("fm.warn.title"), I18n.tr("fm.newfolder.name.empty"));
                 return;
             }
-            String parent = localPathField.getText();
+            String parent = localDirectory.toString();
             if (parent == null || parent.isBlank()) {
         showErrorAlert(I18n.tr("fm.newfolder.local.path.empty"));
                 return;
@@ -345,6 +482,10 @@ public class FileManagerPanelController extends BaseController implements Initia
 
     @FXML
     private void createNewFolder() {
+        final var targetService = sshService;
+        final String targetTab = currentTabId;
+        final String parentPath = remoteDirectory();
+        final int targetGeneration = loadGeneration.get();
         TextInputDialog dialog = new TextInputDialog();
             dialog.setTitle(I18n.tr("fm.newfolder.title"));
             dialog.setHeaderText(I18n.tr("fm.newfolder.header"));
@@ -356,16 +497,17 @@ public class FileManagerPanelController extends BaseController implements Initia
                 return;
             }
 
-            if (sshService == null || currentTabId == null) {
+            if (targetService == null || targetTab == null || targetGeneration != loadGeneration.get()) {
         showErrorAlert(I18n.tr("fm.newfolder.ssh.disconnected"));
                 return;
             }
             com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
                 try {
-                    String remotePath = joinRemotePath(pathField.getText(), folderName.trim());
-                    sshService.createDirectoryForTab(currentTabId, remotePath);
+                    String remotePath = joinRemotePath(parentPath, folderName.trim());
+                    targetService.createDirectoryForTab(targetTab, remotePath);
                     
                     Platform.runLater(() -> {
+                        if (targetGeneration != loadGeneration.get()) return;
                 updateStatus(I18n.tr("fm.newfolder.created", folderName));
         showInfoAlert(I18n.tr("fm.newfolder.success.title"), I18n.tr("fm.newfolder.success.content", folderName));
                         loadRemoteFiles();
@@ -373,6 +515,7 @@ public class FileManagerPanelController extends BaseController implements Initia
                 } catch (Exception e) {
                     log.error("Create folder error", e);
                     Platform.runLater(() -> {
+                        if (targetGeneration != loadGeneration.get()) return;
         showErrorAlert(I18n.tr("fm.newfolder.failed", e.getMessage()));
         updateStatus(I18n.tr("fm.create.failed.status"));
                     });
@@ -384,8 +527,13 @@ public class FileManagerPanelController extends BaseController implements Initia
     @FXML
     private void deleteSelectedItems() {
         // 删除选中的本地文件
-        ObservableList<FileInfo> selectedLocalFiles = localFileTable.getSelectionModel().getSelectedItems();
-        ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> selectedRemoteFiles = remoteFileTable.getSelectionModel().getSelectedItems();
+        List<FileInfo> selectedLocalFiles = List.copyOf(localFileTable.getSelectionModel().getSelectedItems());
+        List<FileInfo> selectedRemoteFiles = List.copyOf(remoteFileTable.getSelectionModel().getSelectedItems());
+        final Path localParent = localDirectory;
+        final String remoteParent = remoteDirectory();
+        final var targetService = sshService;
+        final String targetTab = currentTabId;
+        final int targetGeneration = loadGeneration.get();
         
         if (selectedLocalFiles.isEmpty() && selectedRemoteFiles.isEmpty()) {
         ControllerUtils.showWarningAlert(I18n.tr("fm.warn.title"), I18n.tr("fm.delete.no.selection"));
@@ -399,19 +547,24 @@ public class FileManagerPanelController extends BaseController implements Initia
 
         confirmAlert.showAndWait().ifPresent(response -> {
             if (response == ButtonType.OK) {
+                if (targetGeneration != loadGeneration.get()) {
+                    updateStatus(I18n.tr("fm.session.changed"));
+                    return;
+                }
                 // 在后台线程执行删除
                 com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
                     try {
                         for (FileInfo file : new ArrayList<>(selectedLocalFiles)) {
-                            java.nio.file.Files.delete(localDirectory.resolve(file.getName()));
+                            java.nio.file.Files.delete(localParent.resolve(file.getName()));
                         }
                         for (com.runzhi.aishell.ssh.domain.FileInfo file : new ArrayList<>(selectedRemoteFiles)) {
-                            String remotePath = joinRemotePath(pathField.getText(), file.getName());
+                            String remotePath = joinRemotePath(remoteParent, file.getName());
                             boolean directory = (file.getPermission() & 0040000) != 0;
-                            sshService.deletePathForTab(currentTabId, remotePath, directory);
+                            targetService.deletePathForTab(targetTab, remotePath, directory);
                         }
                         
                         Platform.runLater(() -> {
+                            if (targetGeneration != loadGeneration.get()) return;
         updateStatus(I18n.tr("fm.delete.done"));
         showInfoAlert(I18n.tr("fm.delete.done.title"), I18n.tr("fm.delete.done.content"));
                             loadLocalFiles(); // 重新加载本地文件列表
@@ -420,6 +573,7 @@ public class FileManagerPanelController extends BaseController implements Initia
                     } catch (Exception e) {
                         log.error("Delete error", e);
                         Platform.runLater(() -> {
+                            if (targetGeneration != loadGeneration.get()) return;
         showErrorAlert(I18n.tr("fm.delete.failed", e.getMessage()));
         updateStatus(I18n.tr("fm.delete.failed.status"));
                         });
@@ -437,7 +591,8 @@ public class FileManagerPanelController extends BaseController implements Initia
     }
 
     private void loadLocalFiles() {
-        Path requestedDirectory = localDirectory;
+        Path requestedDirectory = requestedLocalDirectory==null?localDirectory:requestedLocalDirectory;
+        final int generation=localGeneration.incrementAndGet();
         // 在后台线程加载本地文件
         com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
             try {
@@ -451,7 +606,7 @@ public class FileManagerPanelController extends BaseController implements Initia
                                     // 目标不存在时 Files.list 仍可能枚举到它，但读取属性会失败。
                                     if (!Files.exists(path) || !Files.isReadable(path)) return;
                                     BasicFileAttributes attributes = Files.readAttributes(
-                                            path, BasicFileAttributes.class);
+                                            path, BasicFileAttributes.class, java.nio.file.LinkOption.NOFOLLOW_LINKS);
                                     String size = attributes.isDirectory() ? "<DIR>"
                                             : formatLocalSize(attributes.size());
                                     int permission = attributes.isDirectory() ? 0040000 : 0;
@@ -466,25 +621,46 @@ public class FileManagerPanelController extends BaseController implements Initia
                 }
                 Platform.runLater(() -> {
                     // 用户快速切换目录时，不让较早的后台结果覆盖当前目录。
-                    if (requestedDirectory.equals(localDirectory)) localFiles.setAll(loaded);
+                    if (generation!=localGeneration.get()) return;
+                    localDirectory=requestedDirectory; requestedLocalDirectory=null; localFiles.setAll(loaded);
+                    if(localPathField!=null) localPathField.setText(localDirectory.toString());
+                    if(localTree!=null) localTree.reveal(localDirectory.toString());
+                    updateDirectoryLabels();
                 });
             } catch (Exception e) {
                 log.error("Load local files error", e);
                 Platform.runLater(() -> {
-        showErrorAlert(I18n.tr("fm.load.local.failed", e.getMessage()));
+                    if(generation!=localGeneration.get()) return;
+                    requestedLocalDirectory=null;
+                    updateStatus(I18n.tr("fm.phase.navigationFailed",requestedDirectory,localDirectory));
                 });
             }
         });
     }
 
     private void loadRemoteFiles() {
+        if (disposed) return;
         if (sshService == null || currentTabId == null || currentTabId.isBlank()) {
+            int noSessionGeneration = loadGeneration.incrementAndGet();
+            remoteLoading = false;
+            Platform.runLater(() -> {
+                if (noSessionGeneration != loadGeneration.get()) return;
+                if (remoteFiles != null) remoteFiles.clear();
+                loadedRemotePath = null;
+                setRemoteState(RemoteState.DISCONNECTED, I18n.tr("fm.remote.disconnected"));
+                updateStatus(I18n.tr("fm.remote.disconnected"));
+            });
             return;
         }
         if (!isCurrentTabConnected()) {
+            int disconnectedGeneration = loadGeneration.incrementAndGet();
             Platform.runLater(() -> {
-                remoteFiles.clear();
-            updateStatus(I18n.tr("fm.ssh.disconnected"));
+                if (disconnectedGeneration != loadGeneration.get()) return;
+                if (remoteFiles != null) remoteFiles.clear();
+                loadedRemotePath = null;
+                remoteLoading = false;
+                setRemoteState(RemoteState.DISCONNECTED, I18n.tr("fm.remote.disconnected"));
+                updateStatus(I18n.tr("fm.ssh.disconnected"));
             });
             return;
         }
@@ -492,63 +668,87 @@ public class FileManagerPanelController extends BaseController implements Initia
             return;
         }
 
+        final String requestTabId = currentTabId;
+        final var requestService = sshService;
         final String requestPath = pathField != null ? pathField.getText() : "~";
         final String requestKey = normalizePathKey(requestPath);
         final int generation = loadGeneration.incrementAndGet();
         remoteLoading = true;
+        // 切到新路径时先清掉旧目录内容，避免加载期间把上一路径显示成当前内容。
+        if (!requestKey.equals(normalizePathKey(loadedRemotePath)) && remoteFiles != null) {
+            remoteFiles.clear();
+            if (remoteFileTable != null) remoteFileTable.getSelectionModel().clearSelection();
+        }
+        setRemoteState(RemoteState.LOADING, I18n.tr("fm.remote.loading"));
+        updateStatus(I18n.tr("fm.remote.loading"));
 
         com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
             try {
                 if (generation != loadGeneration.get()) {
                     return;
                 }
-            updateStatus(I18n.tr("fm.remote.loading"));
+                String canonical=requestService.canonicalDirectoryForTab(requestTabId,requestPath);
+                final String successfulPath=canonical==null?requestPath:canonical;
                 ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> files =
-                        sshService.listFilesForTab(currentTabId, requestPath);
+                        requestService.listFilesForTab(requestTabId, successfulPath);
 
                 if (generation != loadGeneration.get()) {
                     return;
                 }
                 Platform.runLater(() -> {
-                    if (generation != loadGeneration.get()) return;
-                    boolean samePath = requestKey.equals(normalizePathKey(loadedRemotePath));
-                    if (samePath && files != null && remoteFiles != null && !remoteFiles.isEmpty()
-                            && remoteFiles.size() == files.size()) {
+                    if (!isCurrentLoad(generation, requestService, requestTabId)) return;
+                    if (!isCurrentTabConnected()) {
+                        if (remoteFiles != null) remoteFiles.clear();
+                        loadedRemotePath = null;
                         remoteLoading = false;
-                        updateStatus(I18n.tr("fm.ready"));
+                        setRemoteState(RemoteState.DISCONNECTED, I18n.tr("fm.remote.disconnected"));
+                        updateStatus(I18n.tr("fm.ssh.disconnected"));
                         return;
                     }
                     if (remoteFiles != null) {
                         remoteFiles.clear();
                         if (files != null) remoteFiles.addAll(files);
                     }
-                    loadedRemotePath = requestKey;
+                    loadedRemotePath = successfulPath;
+                    if(pathField!=null && java.util.Objects.equals(pathField.getText(),requestPath)) pathField.setText(successfulPath);
+                    if(remoteTree!=null) remoteTree.reveal(successfulPath);
+                    updateDirectoryLabels();
+                    refreshTargetDisplay();
                     remoteLoading = false;
-        updateStatus(files == null || files.isEmpty() ? I18n.tr("fm.remote.empty") : I18n.tr("fm.ready"));
+                    boolean empty = files == null || files.isEmpty();
+                    setRemoteState(empty ? RemoteState.EMPTY : RemoteState.READY,
+                            empty ? I18n.tr("fm.remote.empty") : "");
+                    updateStatus(empty ? I18n.tr("fm.remote.empty") : I18n.tr("fm.ready"));
                 });
             } catch (Exception e) {
-                String message = e.getMessage() == null ? "" : e.getMessage();
-                if (message.contains("NO_SUCH_FILE") || message.contains("no such file")) {
-                    Platform.runLater(() -> {
-                        if (generation == loadGeneration.get()) {
-                            remoteFiles.clear();
-                            loadedRemotePath = requestKey;
-                            remoteLoading = false;
-        updateStatus(I18n.tr("fm.remote.notexist", requestPath));
-                        }
-                    });
-                } else {
-                    log.error("Load remote files error", e);
-                    Platform.runLater(() -> {
-                        if (generation == loadGeneration.get()) {
-                            remoteLoading = false;
-        showErrorAlert(I18n.tr("fm.remote.load.failed", e.getMessage()));
-        updateStatus(I18n.tr("fm.remote.load.failed.status"));
-                        }
-                    });
-                }
+                Platform.runLater(()->{
+                    if(!isCurrentLoad(generation, requestService, requestTabId)) return;
+                    remoteLoading=false;
+                    if (!isCurrentTabConnected()) {
+                        if (remoteFiles != null) remoteFiles.clear();
+                        loadedRemotePath = null;
+                        setRemoteState(RemoteState.DISCONNECTED, I18n.tr("fm.remote.disconnected"));
+                        updateStatus(I18n.tr("fm.ssh.disconnected"));
+                        return;
+                    }
+                    setRemoteState(RemoteState.FAILED, I18n.tr("fm.remote.failed"));
+                    updateStatus(I18n.tr("fm.phase.navigationFailed",requestPath,loadedRemotePath==null?"—":loadedRemotePath));
+                });
             }
         });
+    }
+
+    /** 异步结果只有在仍绑定同一服务、同一标签且代际未过期时才允许落地。 */
+    private boolean isCurrentLoad(int generation, com.runzhi.aishell.ssh.SSHService requestService,
+                                  String requestTabId) {
+        return generation == loadGeneration.get()
+                && !disposed
+                && requestService == sshService
+                && java.util.Objects.equals(requestTabId, currentTabId);
+    }
+
+    private void setRemoteState(RemoteState state, String placeholderText) {
+        if (remotePlaceholder != null) remotePlaceholder.setText(placeholderText);
     }
 
     private void updateStatus(String status) {
@@ -566,23 +766,8 @@ public class FileManagerPanelController extends BaseController implements Initia
      */
     @FXML
     private void navigateLocalPath() {
-        String text = localPathField.getText();
-        if (text == null || text.isBlank()) {
-            localPathField.setText(localDirectory.toString());
-            return;
-        }
-        Path candidate = resolveLocalPathInput(text);
-        if (!Files.isDirectory(candidate)) {
-        showErrorAlert(I18n.tr("fm.local.path.invalid", candidate));
-            localPathField.setText(localDirectory.toString());
-            return;
-        }
-        if (!Files.isReadable(candidate)) {
-        showErrorAlert(I18n.tr("fm.local.path.unreadable", candidate));
-            localPathField.setText(localDirectory.toString());
-            return;
-        }
-        changeLocalDirectory(candidate);
+        try { changeLocalDirectory(resolveLocalPathInput(localPathField.getText())); }
+        catch(RuntimeException invalid) { updateStatus(I18n.tr("fm.phase.navigationFailed",localPathField.getText(),localDirectory)); }
     }
 
     /** 弹出系统目录选择器，选定后切换本地目录 */
@@ -607,8 +792,8 @@ public class FileManagerPanelController extends BaseController implements Initia
 
     /** 切换当前本地目录并刷新本地文件列表 */
     private void changeLocalDirectory(Path directory) {
-        if (directory == null || directory.equals(localDirectory)) return;
-        localDirectory = directory;
+        if (directory == null) return;
+        requestedLocalDirectory = directory;
         if (localPathField != null) localPathField.setText(directory.toString());
         loadLocalFiles();
         updateStatus(I18n.tr("fm.local.switched", directory));
@@ -629,34 +814,14 @@ public class FileManagerPanelController extends BaseController implements Initia
      * 用户改过路径但未回车时，刷新会直接切到路径栏所指目录，避免“列表不动”的观感。
      */
     @FXML
-    private void refreshLocalList() {
-        if (localPathField != null) {
-            String text = localPathField.getText();
-            if (text != null && !text.isBlank()) {
-                try {
-                    Path candidate = resolveLocalPathInput(text);
-                    if (Files.isDirectory(candidate) && Files.isReadable(candidate)
-                            && !candidate.equals(localDirectory)) {
-                        log.info("本地刷新：路径栏与当前目录不一致，切换到 {}", candidate);
-                        changeLocalDirectory(candidate);
-                        return;
-                    }
-                } catch (Exception invalidInput) {
-                    // 非法输入时不报错，按当前目录刷新
-                    log.debug("本地刷新：路径栏输入无效，按当前目录刷新（{}）", invalidInput.getMessage());
-                }
-            }
-        }
-        loadLocalFiles();
-        updateStatus(I18n.tr("fm.local.refreshed", localDirectory));
-    }
+    private void refreshLocalList() { navigateLocalPath(); }
 
     @FXML
     private void navigateRemotePath() {
         String path = pathField.getText();
-        pathField.setText(path == null || path.isBlank()
-                ? "/" : path.trim().replace('\\', '/'));
-        loadedRemotePath = null;
+        String value=path==null || path.isBlank()?"/":path.trim().replace('\\','/');
+        if(!value.startsWith("/") && !value.startsWith("~")) value=joinRemotePath(remoteDirectory(),value);
+        pathField.setText(value);
         requestRemoteRefresh(true);
     }
 
@@ -701,12 +866,39 @@ public class FileManagerPanelController extends BaseController implements Initia
      * 设置 SSH 服务和当前 Tab ID
      */
     public void setSshService(com.runzhi.aishell.ssh.SSHService sshService, String tabId) {
+        if (disposed) return;
+        boolean changed = this.sshService != sshService || !java.util.Objects.equals(currentTabId, tabId);
+        if (changed && activeTransferControl != null) {
+            updateStatus(I18n.tr("fm.session.busy"));
+            return;
+        }
+        if (changed) {
+            boundTargetParams = null;
+            if(currentTabId!=null && loadedRemotePath!=null) remotePaths.put(currentTabId,loadedRemotePath);
+            loadGeneration.incrementAndGet();
+            loadedRemotePath = null;
+            remoteLoading = false;
+            recoveryChecked = false;
+            if (remoteFiles != null) remoteFiles.clear();
+            if (remoteFileTable != null) remoteFileTable.getSelectionModel().clearSelection();
+            if (pathField != null) pathField.setText("~");
+            if(remoteTree!=null) remoteTree.useContext(tabId==null?"none":tabId,List.of("/","~"));
+            setRemoteState(RemoteState.DISCONNECTED, I18n.tr("fm.remote.disconnected"));
+        }
+        if (this.sshService != sshService) {
+            if (this.sshService != null) this.sshService.removeSessionStateListener(sessionStateListener);
+            if (sshService != null) sshService.addSessionStateListener(sessionStateListener);
+        }
         this.sshService = sshService;
         this.currentTabId = tabId;
+        updateStandaloneControls();
+        refreshTargetDisplay();
+        updateDirectoryLabels();
         log.info("FileManagerPanelController 已设置 SSH 服务，Tab ID: {}", tabId);
         if (sshService != null && tabId != null) {
             String directory = sshService.getCurrentWorkingDirectoryForTab(tabId);
-            if (directory != null && pathField != null) {
+            if(tabId!=null && remotePaths.containsKey(tabId)) directory=remotePaths.get(tabId);
+            if (directory != null && pathField != null && (changed || loadedRemotePath==null)) {
                 String normalized = normalizePathKey(directory);
                 String current = pathField.getText();
                 if (current == null || !normalized.equals(normalizePathKey(current))) {
@@ -721,6 +913,96 @@ public class FileManagerPanelController extends BaseController implements Initia
                 recoveryChecked = true;
                 Platform.runLater(this::offerTransferRecovery);
             }
+        }
+    }
+
+    /** 可读目标属性，供内嵌抽屉头与独立窗口绑定；不暴露内部 tab id。 */
+    public javafx.beans.property.ReadOnlyStringProperty targetDisplayProperty() {
+        return targetDisplay.getReadOnlyProperty();
+    }
+
+    /** 目标完整信息（连接名 + user@host:port），供 tooltip 使用。 */
+    public javafx.beans.property.ReadOnlyStringProperty targetTooltipProperty() {
+        return targetTooltip.getReadOnlyProperty();
+    }
+
+    public String getTargetDisplay() { return targetDisplay.get(); }
+
+    public boolean isStandalone() { return standalone; }
+
+    /**
+     * 绑定独立窗口并固定其会话。已绑定目标的独立窗口忽略后续打开请求，避免跟着活动标签换会话。
+     */
+    public void bindStandaloneTarget(com.runzhi.aishell.ssh.SSHService service, String tabId) {
+        if (standalone && currentTabId != null) return;
+        setStandalone(true);
+        setSshService(service, tabId);
+        applyStandaloneTitle();
+    }
+
+    /** 独立窗口隐藏内嵌次级按钮，并显示完整会话目标行。 */
+    public void setStandalone(boolean standalone) {
+        this.standalone = standalone;
+        updateStandaloneControls();
+        if (remoteSessionLabel != null) {
+            remoteSessionLabel.setVisible(standalone);
+            remoteSessionLabel.setManaged(standalone);
+        }
+        refreshTargetDisplay();
+    }
+
+    private void updateStandaloneControls() {
+        if (openStandaloneButton == null) return;
+        openStandaloneButton.setVisible(!standalone);
+        openStandaloneButton.setManaged(!standalone);
+    }
+
+    /** 内嵌文件区的次级入口：捕获当前 tabId/服务，交给已有导航窗口缓存与生命周期管理。 */
+    @FXML
+    private void openStandaloneWindow() {
+        if (standalone) return;
+        if (sshService == null || currentTabId == null) {
+            updateStatus(I18n.tr("fm.standalone.noTarget"));
+            return;
+        }
+        final var service = sshService;
+        final String tabId = currentTabId;
+        String title = I18n.tr("main.fileManagerWindowTitle", targetDisplay.get());
+        com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance().getNavigationManager()
+                .openInNewWindow("file-manager-panel.fxml", title, "file-manager-panel.fxml:" + tabId, controller -> {
+                    if (controller instanceof FileManagerPanelController fileManager) {
+                        fileManager.bindStandaloneTarget(service, tabId);
+                    }
+                });
+    }
+
+    private void refreshTargetDisplay() {
+        ConnectionParams params = sshService == null || currentTabId == null ? null
+                : sshService.getTabConnectionParams(currentTabId);
+        if (params != null) boundTargetParams = params;
+        else params = boundTargetParams;
+        String target = params == null ? I18n.tr("fm.target.none") : params.displayTarget();
+        String tooltip = params == null ? target : targetTooltip(params);
+        targetDisplay.set(target);
+        targetTooltip.set(tooltip);
+        if (remoteSessionLabel != null) {
+            remoteSessionLabel.setText(I18n.tr("fm.remote.session", target));
+            remoteSessionLabel.setTooltip(new Tooltip(tooltip));
+            remoteSessionLabel.setVisible(standalone);
+            remoteSessionLabel.setManaged(standalone);
+        }
+    }
+
+    private static String targetTooltip(ConnectionParams params) {
+        String endpoint = params.displayEndpoint();
+        String name = params.getProfileName();
+        return name == null || name.isBlank() || name.equals(endpoint) ? endpoint : name + " · " + endpoint;
+    }
+
+    private void applyStandaloneTitle() {
+        if (!standalone || fileManagerArea == null || fileManagerArea.getScene() == null) return;
+        if (fileManagerArea.getScene().getWindow() instanceof javafx.stage.Stage stage) {
+            stage.setTitle(I18n.tr("main.fileManagerWindowTitle", targetDisplay.get()));
         }
     }
 
@@ -748,6 +1030,8 @@ public class FileManagerPanelController extends BaseController implements Initia
      */
     @FXML
     private void downloadFiles() {
+        final String transferTabId = currentTabId;
+        final var transferService = sshService;
         // 从远程服务器下载文件
         updateStatus(I18n.tr("fm.download.start"));
         
@@ -776,7 +1060,7 @@ public class FileManagerPanelController extends BaseController implements Initia
         // 构建远程文件路径列表
         List<String> remoteFilePaths = new ArrayList<>();
         for (com.runzhi.aishell.ssh.domain.FileInfo fileInfo : selectedRemoteFiles) {
-            remoteFilePaths.add(joinRemotePath(pathField.getText(), fileInfo.getName()));
+            remoteFilePaths.add(joinRemotePath(remoteDirectory(), fileInfo.getName()));
         }
 
         boolean hasCollision = selectedRemoteFiles.stream()
@@ -789,33 +1073,42 @@ public class FileManagerPanelController extends BaseController implements Initia
             return;
         }
 
-        beginTransfer(selectedCount, -1);
-        var queuedJob = transferQueueStore.enqueue(com.runzhi.aishell.ssh.TransferQueueStore.Direction.DOWNLOAD,
-                sshService.getHostForTab(currentTabId), sshService.getUsernameForTab(currentTabId),
+        if (transferService != sshService || !java.util.Objects.equals(transferTabId, currentTabId)) {
+            updateStatus(I18n.tr("fm.session.changed"));
+            return;
+        }
+        if (!beginTransfer(selectedCount, -1)) return;
+        final var control = activeTransferControl;
+        var queuedJob = enqueueTransfer(com.runzhi.aishell.ssh.TransferQueueStore.Direction.DOWNLOAD,
+                transferService.getHostForTab(transferTabId), endpointPort(transferService, transferTabId), transferService.getUsernameForTab(transferTabId),
                 remoteFilePaths, localDirPath, policy.name());
+        if (queuedJob == null) return;
         activeTransferTask = transferExecutor.submit(() -> {
             try {
-                transferQueueStore.markRunning(queuedJob.id());
+                if(!transferQueueStore.startJob(queuedJob.id())) { control.cancel(); throw new java.util.concurrent.CancellationException(); }
                 updateProgress(I18n.tr("fm.download.starting", selectedCount), 0);
                 
                 // 调用 SSHService 的批量下载方法
-                sshService.downloadFilesForTab(currentTabId, remoteFilePaths, localDirPath,
-                        createProgressCallback(I18n.tr("fm.action.download")), policy, activeTransferControl);
-                transferQueueStore.complete(queuedJob.id());
+                transferService.downloadFilesForTab(transferTabId, remoteFilePaths, localDirPath,
+                        createProgressCallback(I18n.tr("fm.action.download"), control), policy, control);
+                if (control.isCancelled()) transferQueueStore.markCancelled(queuedJob.id());
+                else transferQueueStore.complete(queuedJob.id());
                 
                 Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
                     updateStatus(I18n.tr("fm.download.done"));
                     showInfoAlert(I18n.tr("fm.download.done.title"), I18n.tr("fm.download.done.content", selectedCount, localDirPath));
                     loadLocalFiles(); // 重新加载本地文件列表
-                    finishTransfer();
+                    finishTransfer(control);
                 });
             } catch (Exception e) {
-                transferQueueStore.markInterrupted(queuedJob.id());
+                if(control.isCancelled()) transferQueueStore.markCancelled(queuedJob.id()); else transferQueueStore.markFailed(queuedJob.id());
                 log.error("批量下载失败", e);
                 Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
                     showErrorAlert(I18n.tr("fm.download.failed", e.getMessage()));
                     updateStatus(I18n.tr("fm.download.failed.status"));
-                    finishTransfer();
+                    finishTransfer(control);
                 });
             }
         });
@@ -853,12 +1146,110 @@ public class FileManagerPanelController extends BaseController implements Initia
     }
 
     /**
+     * 打包上传：本地目录压成 zip 传到远端再解压，适合小文件很多的情况。
+     */
+    @FXML
+    private void uploadPackedFolder() {
+        final String transferTabId = currentTabId;
+        final var transferService = sshService;
+        if (!isCurrentTabConnected()) {
+            showErrorAlert(I18n.tr("fm.upload.disconnected"));
+            updateStatus(I18n.tr("fm.ssh.disconnected"));
+            return;
+        }
+        DirectoryChooser chooser = new DirectoryChooser();
+        chooser.setTitle(I18n.tr("fm.packed.choose"));
+        java.io.File initial = localDirectory.toFile();
+        chooser.setInitialDirectory(initial.isDirectory()
+                ? initial : new java.io.File(System.getProperty("user.home")));
+        java.io.File folder;
+        try {
+            folder = chooser.showDialog(localPathField.getScene().getWindow());
+        } catch (Exception e) {
+            log.warn("打开目录选择器失败", e);
+            return;
+        }
+        if (folder == null || !folder.isDirectory()) {
+            return;
+        }
+
+        String remoteDirPath = remoteDirectory();
+        com.runzhi.aishell.ssh.FileTransferService.OverwritePolicy policy =
+                chooseOverwritePolicy(I18n.tr("fm.collision.remote"));
+        if (policy == null) {
+            updateStatus(I18n.tr("fm.upload.cancelled"));
+            return;
+        }
+
+        if (transferService != sshService || !java.util.Objects.equals(transferTabId, currentTabId)) {
+            updateStatus(I18n.tr("fm.session.changed"));
+            return;
+        }
+        if (!beginTransfer(1, -1)) return;
+        final var control = activeTransferControl;
+        activeTransferTask = transferExecutor.submit(() -> {
+            try {
+                updateProgress(I18n.tr("fm.packed.starting", folder.getName()), 0);
+                boolean unpacked = transferService.uploadPackedFolderForTab(transferTabId,
+                        folder.getAbsolutePath(), remoteDirPath,
+                        createProgressCallback(I18n.tr("fm.action.upload"), control), policy, control);
+                Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
+                    if (unpacked) {
+                        showInfoAlert(I18n.tr("fm.packed.done.title"),
+                                I18n.tr("fm.packed.done.content", folder.getName(), remoteDirPath));
+                        updateStatus(I18n.tr("fm.upload.done"));
+                    } else {
+                        showInfoAlert(I18n.tr("fm.packed.noextract.title"),
+                                I18n.tr("fm.packed.noextract.content"));
+                        updateStatus(I18n.tr("fm.packed.noextract.status"));
+                    }
+                    loadRemoteFiles();
+                    finishTransfer(control);
+                });
+            } catch (Exception e) {
+                log.error("打包上传失败", e);
+                Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
+                    showErrorAlert(I18n.tr("fm.upload.failed", e.getMessage()));
+                    updateStatus(I18n.tr("fm.upload.failed.status"));
+                    finishTransfer(control);
+                });
+            }
+        });
+    }
+
+    /**
      * 上传公共入口：工具栏按钮上传与拖拽上传共用同一套队列、覆盖策略与进度回调。
      */
     private void submitUpload(List<String> localFilePaths, String action) {
+        final String transferTabId = currentTabId;
+        final var transferService = sshService;
         int selectedCount = localFilePaths.size();
         log.info("{}：准备上传 {} 个文件", action, selectedCount);
 
+        // 获取远程目录路径
+        String remoteDirPath = remoteDirectory();
+
+        com.runzhi.aishell.ssh.FileTransferService.OverwritePolicy policy =
+                chooseOverwritePolicy(I18n.tr("fm.collision.remote"));
+        if (policy == null) {
+            updateStatus(I18n.tr("fm.upload.cancelled"));
+            return;
+        }
+
+        if (transferService != sshService || !java.util.Objects.equals(transferTabId, currentTabId)) {
+            updateStatus(I18n.tr("fm.session.changed"));
+            return;
+        }
+        if (!beginTransfer(selectedCount, -1)) return;
+        final var control = activeTransferControl;
+        var queuedJob = enqueueTransfer(com.runzhi.aishell.ssh.TransferQueueStore.Direction.UPLOAD,
+                transferService.getHostForTab(transferTabId), endpointPort(transferService, transferTabId), transferService.getUsernameForTab(transferTabId),
+                localFilePaths, remoteDirPath, policy.name());
+        if (queuedJob == null) return;
+        activeTransferTask = transferExecutor.submit(() -> {
+            try {
         // 本地文件大小可直接读取：总字节数已知，进度按字节加权；读不到则按文件数加权。
         // 目录按整棵树统计，文件数为叶子文件数，与上传服务器的递归口径一致。
         long totalBytes = 0;
@@ -880,43 +1271,33 @@ public class FileManagerPanelController extends BaseController implements Initia
             }
         }
 
-        // 获取远程目录路径
-        String remoteDirPath = pathField.getText();
+                if(control.isCancelled() || activeTransferControl!=control) throw new java.util.concurrent.CancellationException();
+                progressTracker=new TransferProgressTracker((int)Math.max(1,fileLeafCount),totalKnown?totalBytes:-1);
 
-        com.runzhi.aishell.ssh.FileTransferService.OverwritePolicy policy =
-                chooseOverwritePolicy(I18n.tr("fm.collision.remote"));
-        if (policy == null) {
-            updateStatus(I18n.tr("fm.upload.cancelled"));
-            return;
-        }
-
-        beginTransfer((int) Math.max(1, fileLeafCount), totalKnown ? totalBytes : -1);
-        var queuedJob = transferQueueStore.enqueue(com.runzhi.aishell.ssh.TransferQueueStore.Direction.UPLOAD,
-                sshService.getHostForTab(currentTabId), sshService.getUsernameForTab(currentTabId),
-                localFilePaths, remoteDirPath, policy.name());
-        activeTransferTask = transferExecutor.submit(() -> {
-            try {
-                transferQueueStore.markRunning(queuedJob.id());
+                if(!transferQueueStore.startJob(queuedJob.id())) { control.cancel(); throw new java.util.concurrent.CancellationException(); }
                 updateProgress(I18n.tr("fm.upload.starting", selectedCount), 0);
                 
                 // 调用 SSHService 的批量上传方法
-                sshService.uploadFilesForTab(currentTabId, localFilePaths, remoteDirPath,
-                        createProgressCallback(I18n.tr("fm.action.upload")), policy, activeTransferControl);
-                transferQueueStore.complete(queuedJob.id());
+                transferService.uploadFilesForTab(transferTabId, localFilePaths, remoteDirPath,
+                        createProgressCallback(I18n.tr("fm.action.upload"), control), policy, control);
+                if (control.isCancelled()) transferQueueStore.markCancelled(queuedJob.id());
+                else transferQueueStore.complete(queuedJob.id());
                 
                 Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
                     updateStatus(I18n.tr("fm.upload.done"));
                     showInfoAlert(I18n.tr("fm.upload.done.title"), I18n.tr("fm.upload.done.content", selectedCount, remoteDirPath));
                     loadRemoteFiles(); // 重新加载远程文件列表
-                    finishTransfer();
+                    finishTransfer(control);
                 });
             } catch (Exception e) {
-                transferQueueStore.markInterrupted(queuedJob.id());
+                if(control.isCancelled()) transferQueueStore.markCancelled(queuedJob.id()); else transferQueueStore.markFailed(queuedJob.id());
                 log.error("批量上传失败", e);
                 Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
                     showErrorAlert(I18n.tr("fm.upload.failed", e.getMessage()));
                     updateStatus(I18n.tr("fm.upload.failed.status"));
-                    finishTransfer();
+                    finishTransfer(control);
                 });
             }
         });
@@ -979,10 +1360,8 @@ public class FileManagerPanelController extends BaseController implements Initia
     @FXML
     private void navigateLocalToParent() {
         Path parent = localDirectory.getParent();
-        if (parent == null || !Files.isDirectory(parent) || !Files.isReadable(parent)) return;
-        localDirectory = parent;
-        localPathField.setText(parent.toString());
-        loadLocalFiles();
+        if (parent == null) return;
+        changeLocalDirectory(parent);
     }
 
     private static String joinRemotePath(String directory, String name) {
@@ -990,41 +1369,83 @@ public class FileManagerPanelController extends BaseController implements Initia
         return (base.endsWith("/") ? base : base + "/") + name;
     }
 
-    private void offerTransferRecovery() {
-        List<com.runzhi.aishell.ssh.TransferQueueStore.Job> jobs =
-                transferQueueStore.recoverable(sshService.getHostForTab(currentTabId),
-                        sshService.getUsernameForTab(currentTabId));
-        if (jobs.isEmpty()) return;
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
-                I18n.tr("fm.recover.content", jobs.size()),
-                ButtonType.YES, ButtonType.NO);
-        alert.setTitle(I18n.tr("fm.recover.title"));
-        alert.setHeaderText(I18n.tr("fm.recover.header", sshService.getUsernameForTab(currentTabId),
-                sshService.getHostForTab(currentTabId)));
-        if (alert.showAndWait().orElse(ButtonType.NO) != ButtonType.YES) return;
-        for (var job : jobs) submitRecoveredJob(job);
+    /** Unknown legacy ports are retained but never offered on an assumed endpoint. */
+    private static int endpointPort(com.runzhi.aishell.ssh.SSHService service, String tabId) {
+        var profile = service == null ? null : service.getTabConnectionParams(tabId);
+        return profile == null ? 0 : profile.getPort();
     }
 
-    private void submitRecoveredJob(com.runzhi.aishell.ssh.TransferQueueStore.Job job) {
+    private void offerTransferRecovery() {
+        if (sshService == null || currentTabId == null) return;
+        final var service = sshService;
+        final String session = currentTabId;
+        int port = endpointPort(service, session);
+        if (port <= 0) return;
+        var jobs = transferQueueStore.recoverable(service.getHostForTab(session), port,
+                service.getUsernameForTab(session));
+        if (jobs.isEmpty()) {
+            if (transferQueueStore.recoverable(service.getHostForTab(session), service.getUsernameForTab(session))
+                    .stream().anyMatch(job -> job.port() == 0)) updateStatus(I18n.tr("fm.recover.unverified"));
+            return;
+        }
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
+                I18n.tr("fm.recover.content", jobs.size()), ButtonType.YES, ButtonType.NO);
+        alert.setTitle(I18n.tr("fm.recover.title"));
+        alert.setHeaderText(I18n.tr("fm.recover.header", service.getUsernameForTab(session),
+                service.getHostForTab(session) + ":" + port));
+        if (alert.showAndWait().orElse(ButtonType.NO) != ButtonType.YES) return;
+        if (service != sshService || !java.util.Objects.equals(session, currentTabId)) return;
+        submitRecoveredJobs(jobs);
+    }
+
+    /** Resume an explicitly confirmed endpoint batch, with one visible batch cancel handle. */
+    private void submitRecoveredJobs(List<com.runzhi.aishell.ssh.TransferQueueStore.Job> jobs) {
+        if (jobs.isEmpty()) return;
+        final var service = sshService;
+        final String session = currentTabId;
+        int port = endpointPort(service, session);
+        if (jobs.stream().anyMatch(job -> job.port() <= 0 || job.port() != port
+                || !job.host().equals(service.getHostForTab(session))
+                || !job.username().equals(service.getUsernameForTab(session)))) {
+            updateStatus(I18n.tr("fm.session.changed"));
+            return;
+        }
+        if (!beginTransfer(jobs.size(), -1)) return;
+        final var control = activeTransferControl;
+        if (cancelTransferButton != null) cancelTransferButton.setText(I18n.tr("fm.recover.cancel"));
+        for(var job:jobs) { transferQueueStore.markPending(job.id()); ownJob(job.id()); }
         activeTransferTask = transferExecutor.submit(() -> {
-            com.runzhi.aishell.ssh.FileTransferService.TransferControl control =
-                    new com.runzhi.aishell.ssh.FileTransferService.TransferControl();
+            boolean failed = false;
             try {
-                transferQueueStore.markRunning(job.id());
-                if (job.direction() == com.runzhi.aishell.ssh.TransferQueueStore.Direction.UPLOAD) {
-                    sshService.uploadFilesForTab(currentTabId, job.sources(), job.destination(),
-                            createProgressCallback(I18n.tr("fm.action.upload.resume")),
-                            com.runzhi.aishell.ssh.FileTransferService.OverwritePolicy.RESUME, control);
-                } else {
-                    sshService.downloadFilesForTab(currentTabId, job.sources(), job.destination(),
-                            createProgressCallback(I18n.tr("fm.action.download.resume")),
-                            com.runzhi.aishell.ssh.FileTransferService.OverwritePolicy.RESUME, control);
+                for (var job : jobs) {
+                    if (control.isCancelled()) break;
+                    if(transferQueueStore.snapshot().stream().noneMatch(current->current.id().equals(job.id()) && current.status()!=com.runzhi.aishell.ssh.TransferQueueStore.Status.CANCELLED)) continue;
+                    try {
+                        currentTransferJobId=job.id();
+                        if(!transferQueueStore.startJob(job.id())) continue;
+                        var policy = com.runzhi.aishell.ssh.FileTransferService.OverwritePolicy.valueOf(job.policy());
+                        if (job.direction() == com.runzhi.aishell.ssh.TransferQueueStore.Direction.UPLOAD) {
+                            service.uploadFilesForTab(session, job.sources(), job.destination(),
+                                    createProgressCallback(I18n.tr("fm.action.upload.resume"), control), policy, control);
+                        } else {
+                            service.downloadFilesForTab(session, job.sources(), job.destination(),
+                                    createProgressCallback(I18n.tr("fm.action.download.resume"), control), policy, control);
+                        }
+                        if (control.isCancelled()) transferQueueStore.markCancelled(job.id());
+                        else transferQueueStore.complete(job.id());
+                    } catch (Exception e) {
+                        failed = true;
+                        if(control.isCancelled()) transferQueueStore.markCancelled(job.id()); else transferQueueStore.markFailed(job.id());
+                        if (control.isCancelled()) break;
+                    }
                 }
-                transferQueueStore.complete(job.id());
-                updateStatus(I18n.tr("fm.recover.done"));
-            } catch (Exception e) {
-                transferQueueStore.markInterrupted(job.id());
-                updateStatus(I18n.tr("fm.recover.failed", e.getMessage()));
+            } finally {
+                boolean anyFailed = failed;
+                Platform.runLater(() -> {
+                    if (activeTransferControl != control) return;
+                    finishTransfer(control);
+                    updateStatus(I18n.tr(anyFailed ? "fm.recover.batch.failed" : "fm.recover.done"));
+                });
             }
         });
     }
@@ -1040,14 +1461,14 @@ public class FileManagerPanelController extends BaseController implements Initia
         String normalized = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
         int separator = normalized.lastIndexOf('/');
         pathField.setText(separator <= 0 ? "/" : normalized.substring(0, separator));
-        loadedRemotePath = null;
         requestRemoteRefresh(true);
     }
 
-    private com.runzhi.aishell.ssh.FileTransferService.ProgressCallback createProgressCallback(String action) {
+    private com.runzhi.aishell.ssh.FileTransferService.ProgressCallback createProgressCallback(String action, com.runzhi.aishell.ssh.FileTransferService.TransferControl owner) {
         return new com.runzhi.aishell.ssh.FileTransferService.ProgressCallback() {
             @Override
             public void onProgress(String fileName, long current, long total) {
+                if (activeTransferControl != owner) return;
                 TransferProgressTracker tracker = progressTracker;
                 if (tracker != null) tracker.onProgress(fileName, current, total);
                 renderTransferProgress(action, false);
@@ -1055,11 +1476,12 @@ public class FileManagerPanelController extends BaseController implements Initia
 
             @Override
             public void onError(String fileName, String errorMessage) {
-                updateStatus(I18n.tr("fm.transfer.failed", action, fileName, errorMessage));
+                if (activeTransferControl == owner) updateStatus(I18n.tr("fm.transfer.failed", action, fileName, errorMessage));
             }
 
             @Override
             public void onComplete(String fileName) {
+                if (activeTransferControl != owner) return;
                 TransferProgressTracker tracker = progressTracker;
                 if (tracker != null) tracker.onComplete(fileName);
                 renderTransferProgress(action, true);
@@ -1084,6 +1506,8 @@ public class FileManagerPanelController extends BaseController implements Initia
         final String fileName = tracker.activeFile;
 
         Platform.runLater(() -> {
+            if (progressTracker != tracker) return;
+            if(currentTransferJobId!=null) transferQueueStore.progress(currentTransferJobId,Math.round(percent*100)+"% · "+formatLocalSize(transferred));
             if (transferProgressBar != null) transferProgressBar.setProgress(percent);
             updateStatus(I18n.tr("fm.transfer.progress", action, doneFiles, totalFiles, fileName));
             if (progressLabel != null) {
@@ -1115,11 +1539,30 @@ public class FileManagerPanelController extends BaseController implements Initia
         }).orElse(null);
     }
 
-    private void beginTransfer(int fileCount, long totalBytes) {
+    /** Persist before starting I/O; release the busy state if queue persistence fails. */
+    private com.runzhi.aishell.ssh.TransferQueueStore.Job enqueueTransfer(
+            com.runzhi.aishell.ssh.TransferQueueStore.Direction direction, String host, int port,
+            String username, List<String> sources, String destination, String policy) {
+        try {
+            var job=transferQueueStore.enqueue(direction, host, port, username, sources, destination, policy);
+            ownJob(job.id()); return job;
+        } catch (RuntimeException e) {
+            finishTransfer(activeTransferControl);
+            updateStatus(I18n.tr("fm.transfer.queue.failed", e.getMessage()));
+            return null;
+        }
+    }
+
+    private boolean beginTransfer(int fileCount, long totalBytes) {
+        if (activeTransferControl != null) {
+            updateStatus(I18n.tr("fm.transfer.busy"));
+            return false;
+        }
         activeTransferControl = new com.runzhi.aishell.ssh.FileTransferService.TransferControl();
         progressTracker = new TransferProgressTracker(fileCount, totalBytes);
         lastProgressRenderNano = 0L;
         if (cancelTransferButton != null) {
+            cancelTransferButton.setText(I18n.tr("fm.cancel.transfer"));
             cancelTransferButton.setVisible(true);
             cancelTransferButton.setManaged(true);
         }
@@ -1128,10 +1571,16 @@ public class FileManagerPanelController extends BaseController implements Initia
             transferProgressBar.setVisible(true);
             transferProgressBar.setManaged(true);
         }
+        return true;
     }
 
-    private void finishTransfer() {
+    private void finishTransfer(com.runzhi.aishell.ssh.FileTransferService.TransferControl owner) {
+        if (activeTransferControl != owner) return;
+        for(String id:ownedQueueJobs) transferQueueStore.clearCancel(id);
+        ownedQueueJobs.clear();
+        currentTransferJobId=null;
         activeTransferControl = null;
+        if (queueView != null) queueView.refresh();
         activeTransferTask = null;
         progressTracker = null;
         if (cancelTransferButton != null) {
@@ -1149,9 +1598,10 @@ public class FileManagerPanelController extends BaseController implements Initia
     private void cancelTransfer() {
         com.runzhi.aishell.ssh.FileTransferService.TransferControl control = activeTransferControl;
         if (control != null) control.cancel();
+        if(currentTransferJobId!=null) transferQueueStore.markCancelled(currentTransferJobId);
         Future<?> task = activeTransferTask;
         if (task != null) task.cancel(true);
-        finishTransfer();
+        finishTransfer(control);
         updateStatus(I18n.tr("fm.transfer.cancelled"));
     }
 
@@ -1228,22 +1678,16 @@ public class FileManagerPanelController extends BaseController implements Initia
     }
 
     /** 目录树统计：返回 [0]=全部叶子文件字节数，[1]=叶子文件数 */
-    private static long[] directoryLayout(java.io.File dir) {
-        long bytes = 0;
-        long count = 0;
-        java.io.File[] children = dir.listFiles();
-        if (children == null) return new long[] {0, 0};
-        for (java.io.File child : children) {
-            if (child.isDirectory()) {
-                long[] sub = directoryLayout(child);
-                bytes += sub[0];
-                count += sub[1];
-            } else {
-                bytes += child.length();
-                count++;
+    private static long[] directoryLayout(java.io.File directory) throws java.io.IOException {
+        long[] result=new long[2];
+        try(var paths=Files.walk(directory.toPath())) {
+            var iterator=paths.iterator();
+            while(!Thread.currentThread().isInterrupted() && iterator.hasNext()) {
+                var attrs=Files.readAttributes(iterator.next(),BasicFileAttributes.class,java.nio.file.LinkOption.NOFOLLOW_LINKS);
+                if(attrs.isRegularFile()) { result[0]+=attrs.size(); result[1]++; }
             }
         }
-        return new long[] {bytes, count};
+        return result;
     }
 
     private static String formatLocalSize(long bytes) {
@@ -1262,6 +1706,14 @@ public class FileManagerPanelController extends BaseController implements Initia
     }
 
     public void dispose() {
+        if (disposed) return;
+        disposed = true;
+        loadGeneration.incrementAndGet();
+        if (sshService != null) sshService.removeSessionStateListener(sessionStateListener);
+        localGeneration.incrementAndGet();
+        if(localTree!=null) localTree.close(); if(remoteTree!=null) remoteTree.close(); if(queueView!=null) queueView.close();
+        for(String id:ownedQueueJobs) transferQueueStore.clearCancel(id);
+        ownedQueueJobs.clear();
         com.runzhi.aishell.ssh.FileTransferService.TransferControl control = activeTransferControl;
         if (control != null) control.cancel();
         Future<?> task = activeTransferTask;

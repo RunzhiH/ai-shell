@@ -23,8 +23,10 @@ import com.runzhi.aishell.common.validation.BoundaryChecker;
 import com.runzhi.aishell.monitor.SystemMonitor;
 import com.runzhi.aishell.ssh.SSHService;
 import com.runzhi.aishell.ssh.domain.ConnectionParams;
+import com.runzhi.aishell.agent.AgentSessionTracker;
 import com.runzhi.aishell.ssh.impl.SSHServiceImpl;
 import com.runzhi.aishell.common.i18n.I18n;
+import javafx.animation.PauseTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.application.Platform;
@@ -48,6 +50,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -61,9 +64,7 @@ import java.util.prefs.Preferences;
 public class MainViewController extends BaseController implements Initializable {
 
     // 常量定义
-    private static final String DEFAULT_STATUS_READY = "就绪";
     private static final String DEFAULT_STATUS_DISCONNECTED = "已断开";
-    private static final String DEFAULT_STATUS_CONNECTING = "已连接到 ";
     private static final String ABOUT_DIALOG_TITLE = "关于 AIShell";
     private static final String ABOUT_DIALOG_HEADER = "AIShell - SSH & AI Assistant";
     private static final String ABOUT_DIALOG_CONTENT = "版本: " + AppConstants.APP_VERSION + "\n这是一个集成了SSH连接和AI助手功能的桌面应用。\n\n作者: Runzhi\n\n基于JavaFX开发";
@@ -75,11 +76,40 @@ public class MainViewController extends BaseController implements Initializable 
     @FXML
     private javafx.scene.layout.VBox serverPanel;
     @FXML
-    private javafx.scene.layout.VBox serverContent;
+    private javafx.scene.layout.HBox serverPanelHead;
+    @FXML
+    private Label serverPanelHint;
+    @FXML
+    private Separator serverPanelSeparator;
+    @FXML
+    private javafx.scene.control.TreeView<ConnectionParams> serverTree;
+    @FXML
+    private javafx.scene.control.TextField serverTreeFilter;
+    /** 活动会话身份与指标独立滚动视口；服务器树保持自己的滚动与高度。 */
+    @FXML
+    private ScrollPane activeSessionScroll;
+    @FXML
+    private Label activeSessionTitle;
+    @FXML
+    private Label activeSessionName;
+    /** 侧栏指标组（CPU/内存/负载/网络 + 更多系统信息）；身份标题不属于该组。 */
+    @FXML
+    private VBox metricsGroup;
+    @FXML
+    private Label netLabel;
+    @FXML
+    private javafx.scene.control.Label statusApprovalLocator;
     @FXML
     private Label currentHostLabel;
     @FXML
     private Label hostStatusDot;
+    /**
+     * 会话状态圆点的内联样式。
+     * <p>内联样式里的颜色变量只能引用主题样式表中已定义的名字（style.css / light-theme.css
+     * 的 .root 块），否则 JavaFX 解析时会打印 "Could not resolve ..." 警告且颜色不生效。</p>
+     */
+    static final String STATUS_DOT_CONNECTED_STYLE = "-fx-text-fill: -fx-success-color;";
+    static final String STATUS_DOT_IDLE_STYLE = "-fx-text-fill: -fx-text-secondary;";
     @FXML
     private Label statusHostLabel;
     @FXML
@@ -96,6 +126,8 @@ public class MainViewController extends BaseController implements Initializable 
     private javafx.scene.control.Button btnCollapseServer;
     @FXML
     private javafx.scene.control.Button btnFilesDrawer;
+    @FXML
+    private Label statusPageSeparator;
 
     @FXML
     private javafx.scene.control.Button navConnections;
@@ -105,6 +137,8 @@ public class MainViewController extends BaseController implements Initializable 
     private javafx.scene.control.Button navFiles;
     @FXML
     private javafx.scene.control.Button navMonitor;
+    @FXML
+    private javafx.scene.control.Button btnCommandPalette;
     @FXML
     private javafx.scene.control.Button navAI;
 
@@ -146,7 +180,11 @@ public class MainViewController extends BaseController implements Initializable 
     private static final String KEY_SERVER_OPEN = "layout.server.open";
     private static final String KEY_SERVER_DIVIDER = "layout.server.divider";
     private static final String KEY_THEME = "layout.theme";
+    /** 活动会话滚动块最多占侧栏高度 50%，其余高度优先留给服务器树。 */
+    private static final double ACTIVE_SESSION_MAX_HEIGHT_RATIO = 0.50;
     private boolean serverOpen = true;
+    /** 当前内容页是否为终端工作区；侧栏指标只在这一页有意义。 */
+    private boolean terminalContext;
 
     // 各面板的控制器实例
     private MonitorPanelController monitorPanelController;
@@ -175,18 +213,25 @@ public class MainViewController extends BaseController implements Initializable 
     // 视图切换器
     private com.runzhi.aishell.common.util.ViewSwitcher viewSwitcher;
 
+    // 命令面板（点击式，无全局快捷键）
+    private com.runzhi.aishell.ui.CommandPalette commandPalette;
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         // 调用父类初始化方法，确保parameterManager等字段被正确初始化
         super.initialize(location, resources);
 
         if (statusLabel != null) {
-            statusLabel.setText(DEFAULT_STATUS_READY);
+            statusLabel.setText(I18n.tr("main.ready"));
         }
 
         // 初始化模块管理器（替代之前的pageManager）
         moduleManager = AIShellModuleManager.getInstance();
         sshService = moduleManager.getSshService();
+        // 会话状态只有一个来源：连接/断开/关闭标签后统一刷新，界面各处只做展示
+        if (sshService != null) {
+            sshService.addSessionStateListener(() -> Platform.runLater(this::refreshSessionIndicators));
+        }
         initializeSidebarStorageTable();
 
         // 初始化按钮管理器
@@ -199,18 +244,24 @@ public class MainViewController extends BaseController implements Initializable 
         serverOpen = LAYOUT_PREFS.getBoolean(KEY_SERVER_OPEN, true);
         setupLayoutPersistence();
         applyPanelVisibility();
-        loadServerListIntoPanel();
+        configureSidebarScroll();
+        setupServerTree();
+        buildServerTree("");
         setupV1Shortcuts();
         restoreTheme();
         refreshThemeLabel();
-        // 监听连接参数 → 同步顶栏/状态栏目标主机
+
+        // Agent 会话状态变化 → 底栏审批定位与树角标（归属到具体会话）
+        AgentSessionTracker.getInstance().addListener(state -> Platform.runLater(() -> {
+            updateApprovalLocator();
+            buildServerTree(serverTreeFilter == null ? "" : serverTreeFilter.getText());
+        }));
+        // 连接参数到达时不直接写目标：此时新标签可能尚未创建/选中，提前写入会把上一台主机标成“已连接”。
+        // 当前目标统一从当前选中标签派生，等标签切换或会话刷新时再更新。
         com.runzhi.aishell.common.util.ParameterManager.getInstance().getParameters()
             .addListener((javafx.collections.MapChangeListener<? super String, ? super Object>) change -> {
                 if ("connection_params".equals(change.getKey()) && change.wasAdded()) {
-                    Object value = change.getValueAdded();
-                    if (value instanceof ConnectionParams params) {
-                        Platform.runLater(() -> updateCurrentHostDisplay(params));
-                    }
+                    Platform.runLater(this::refreshCurrentTargetDisplay);
                 }
             });
 
@@ -249,12 +300,21 @@ public class MainViewController extends BaseController implements Initializable 
                     }
                 } else if ("current_active_tab".equals(change.getKey()) && change.wasAdded()) {
                     String tabId = String.valueOf(change.getValueAdded());
-                    Platform.runLater(() -> monitorSidebarForTab(tabId));
+                    Platform.runLater(() -> {
+                        // 连接完成事件可能晚于用户切页；事件不再指向当前标签时不能覆盖当前目标/侧栏
+                        if (terminalPanelController != null
+                                && !Objects.equals(terminalPanelController.getSelectedTabId(), tabId)) {
+                            return;
+                        }
+                        monitorSidebarForTab(tabId);
+                        refreshCurrentTargetDisplay();
+                    });
                 } else if ("execute_command".equals(change.getKey()) && change.wasAdded()) {
                     String command = String.valueOf(change.getValueAdded());
                     Platform.runLater(() -> executeBookmarkCommand(command));
                 }
             });
+        refreshFileEntryState();
     }
 
     @SuppressWarnings("unchecked")
@@ -268,18 +328,26 @@ public class MainViewController extends BaseController implements Initializable 
 
     private void monitorSidebarForTab(String tabId) {
         activeSidebarTabId = tabId;
+        refreshSidebarMetricsVisibility();
         if (activeSidebarMonitor != null) activeSidebarMonitor.stopMonitoring();
-        var connection = sshService == null ? null : sshService.getTabConnection(tabId);
+        var connection = (sshService == null || tabId == null) ? null : sshService.getTabConnection(tabId);
+        // 活动会话卡标题始终跟随当前活动 tab（指标/文件归属同一会话）
+        if (activeSessionTitle != null) {
+            String display = terminalPanelController == null ? (tabId == null ? "—" : tabId)
+                    : terminalPanelController.tabDisplayFor(tabId);
+            activeSessionTitle.setText(I18n.tr("main.activeSession", display));
+        }
         if (connection == null || !connection.isConnected()) {
             activeSidebarMonitor = null;
             clearSidebarMetrics();
+            // 连接异步建立：绑定瞬间往往未就绪，就绪后重试，避免活动会话卡在「未连接」
+            awaitSidebarConnection(tabId);
             return;
         }
-        if (statusHealthLabel != null) statusHealthLabel.setText("已连接");
-        if (hostStatusDot != null) hostStatusDot.setStyle("-fx-text-fill: -fx-success-color;");
-        // 连接参数由 ParameterManager / 连接列表侧更新；此处仅刷新健康状态
-        if (statusHostLabel != null && statusHostLabel.getText().equals("—")) {
-            statusHostLabel.setText(tabId != null ? tabId : "已连接");
+        var params = sshService.getTabConnectionParams(tabId);
+        if (activeSessionName != null && params != null) {
+            activeSessionName.setText((params.getUsername() == null ? "" : params.getUsername() + "@")
+                    + params.getHost() + ":" + params.getPort());
         }
         SystemMonitor monitor = sidebarMonitors.computeIfAbsent(tabId, ignored -> new SystemMonitor(connection));
         activeSidebarMonitor = monitor;
@@ -301,6 +369,11 @@ public class MainViewController extends BaseController implements Initializable 
                     ? metrics.getUsedSwap() * 100.0 / metrics.getTotalSwap() : 0;
             memoryLabel.setText(String.format("%d/%d (%.1f%%)", metrics.getUsedMemory(), metrics.getTotalMemory(), memory));
             swapLabel.setText(String.format("%d/%d (%.1f%%)", metrics.getUsedSwap(), metrics.getTotalSwap(), swap));
+            if (netLabel != null) {
+                String down = metrics.getNetDown() == null ? "—" : metrics.getNetDown();
+                String up = metrics.getNetUp() == null ? "—" : metrics.getNetUp();
+                netLabel.setText("↓" + down + " ↑" + up);
+            }
         });
     }
 
@@ -335,12 +408,36 @@ public class MainViewController extends BaseController implements Initializable 
         } catch (NumberFormatException e) { return value; }
     }
 
+    /** 等待目标会话的 SSH 连接就绪后重试侧栏绑定（约 12 秒内每 600ms 一次）。 */
+    private void awaitSidebarConnection(String tabId) {
+        if (tabId == null || sshService == null) return;
+        final int[] attempts = { 0 };
+        retrySidebarOnce(tabId, attempts);
+    }
+
+    private void retrySidebarOnce(String tabId, int[] attempts) {
+        PauseTransition pause = new PauseTransition(javafx.util.Duration.millis(600));
+        pause.setOnFinished(event -> {
+            if (!java.util.Objects.equals(tabId, activeSidebarTabId)) return; // 用户已切到别的会话
+            attempts[0]++;
+            var connection = sshService.getTabConnection(tabId);
+            if (connection != null && connection.isConnected()) {
+                monitorSidebarForTab(tabId);
+            } else if (attempts[0] < 20) {
+                retrySidebarOnce(tabId, attempts);
+            }
+        });
+        pause.play();
+    }
+
     private void clearSidebarMetrics() {
         if (uptimeLabel != null) uptimeLabel.setText("-");
         if (loadLabel != null) loadLabel.setText("0.00, 0.00, 0.00");
         if (cpuLabel != null) cpuLabel.setText("0%");
         if (memoryLabel != null) memoryLabel.setText("0/0 (0%)");
         if (swapLabel != null) swapLabel.setText("0/0 (0%)");
+        if (netLabel != null) netLabel.setText("—");
+        if (activeSessionName != null) activeSessionName.setText(I18n.tr("main.disconnected"));
         if (storageTable != null) storageTable.getItems().clear();
     }
 
@@ -382,6 +479,7 @@ public class MainViewController extends BaseController implements Initializable 
             
             // 使用视图切换器加载欢迎页面
             viewSwitcher.replaceContent(welcomeView, "welcome-page");
+            setPageContext(I18n.tr("main.welcome"), false);
             
             log.debug("欢迎页面已加载");
         } catch (Exception e) {
@@ -409,7 +507,7 @@ public class MainViewController extends BaseController implements Initializable 
     @FXML
     public void connectToServer() {
         openConnectionList();
-        statusLabel.setText("已打开连接管理，请选择要连接的服务器");
+        statusLabel.setText(I18n.tr("main.selectConnection"));
     }
 
     // 统一的断开连接方法 - 合并重复功能
@@ -423,7 +521,7 @@ public class MainViewController extends BaseController implements Initializable 
             sshService.disconnect();
         }
 
-        statusLabel.setText(DEFAULT_STATUS_DISCONNECTED);
+        statusLabel.setText(I18n.tr("main.disconnected"));
 
         // 通知各面板连接已断开
         Platform.runLater(() -> {
@@ -434,15 +532,21 @@ public class MainViewController extends BaseController implements Initializable 
         });
     }
 
+    /** Independent AI chat keeps the current page and terminal sessions intact. */
     @FXML
     public void openAIAssistant() {
-        // 已在终端时保留当前标签；只有从其他页面进入时才创建终端视图。
+        if (moduleManager == null) moduleManager = AIShellModuleManager.getInstance();
+        moduleManager.getNavigationManager().openInNewWindow("ai-assistant-panel.fxml",
+                I18n.tr("workbench.aiAssistant"));
+    }
+
+    /** Agent tasks stay in the terminal workspace and retain their session ownership. */
+    @FXML
+    public void openAgentWorkspace() {
         ensureTerminalPanelVisible();
-        if (terminalPanelController != null) {
-            terminalPanelController.showAgentWorkspace();
-        }
+        if (terminalPanelController != null) terminalPanelController.showAgentWorkspace();
         if (statusAiLabel != null) statusAiLabel.setText("Agent");
-        statusLabel.setText("已聚焦终端 Agent");
+        if (statusLabel != null) statusLabel.setText(I18n.tr("workbench.agent.focused"));
     }
 
     /** Ctrl+Shift+A 在当前终端视图中切换 Agent 面板。 */
@@ -465,8 +569,14 @@ public class MainViewController extends BaseController implements Initializable 
         if (viewSwitcher != null) {
             TerminalPanelController active = viewSwitcher.getController(
                     "terminal-panel.fxml", TerminalPanelController.class);
-            if (active != null) terminalPanelController = active;
+            if (active != null) attachTerminalPanel(active);
         }
+    }
+
+    /** 统一挂接终端控制器与其文件区状态回调，避免各入口漏掉底栏状态同步。 */
+    private void attachTerminalPanel(TerminalPanelController controller) {
+        this.terminalPanelController = controller;
+        if (controller != null) controller.setFileAreaStateListener(this::refreshFileEntryState);
     }
 
     /** V1 §37：隐藏/显示服务器栏 */
@@ -476,7 +586,7 @@ public class MainViewController extends BaseController implements Initializable 
         applyPanelVisibility();
         LAYOUT_PREFS.putBoolean(KEY_SERVER_OPEN, serverOpen);
         if (serverOpen) {
-            loadServerListIntoPanel();
+            buildServerTree(serverTreeFilter == null ? "" : serverTreeFilter.getText());
         }
     }
 
@@ -492,37 +602,149 @@ public class MainViewController extends BaseController implements Initializable 
             tm.applyTheme(scene, next);
             LAYOUT_PREFS.put(KEY_THEME, next.name());
             refreshThemeLabel();
-            statusLabel.setText("主题：" + next.getDisplayName());
+            statusLabel.setText(I18n.tr("main.themeChanged", I18n.tr(next == com.runzhi.aishell.common.util.ThemeManager.Theme.LIGHT ? "main.light" : "main.dark")));
         } catch (Exception e) {
             log.error("主题切换失败", e);
         }
     }
 
-    /** V1 §12：底部文件 Drawer（当前标签） */
+    /**
+     * 顶栏、菜单与命令面板的统一文件入口：进入终端工作区并幂等展开当前标签文件区。
+     * 已展开时再次进入保持展开，不把主入口做成“开/关”开关。
+     */
+    @FXML
+    public void openFiles() {
+        ensureTerminalPanelVisible();
+        updateWorkModeIndicators("terminal");
+        if (terminalPanelController == null) {
+            statusLabel.setText(fileAreaUnavailableReason());
+            refreshFileEntryState();
+            return;
+        }
+        TerminalPanelController.DrawerResult result = terminalPanelController.showFileDrawer();
+        statusLabel.setText(result == TerminalPanelController.DrawerResult.OPENED
+                ? I18n.tr("main.filesOpened") : fileAreaUnavailableReason());
+        refreshFileEntryState();
+    }
+
+    /** 底栏文件入口：展开/收起当前标签文件区，按钮文本与 tooltip 反映真实状态。 */
     @FXML
     public void toggleFilesDrawer() {
-        if (terminalPanelController != null) {
-            terminalPanelController.toggleFileDrawer();
-            statusLabel.setText("文件抽屉已切换");
+        ensureTerminalPanelVisible();
+        if (terminalPanelController == null) {
+            statusLabel.setText(fileAreaUnavailableReason());
+            refreshFileEntryState();
+            return;
+        }
+        TerminalPanelController.DrawerResult result = terminalPanelController.toggleFileDrawer();
+        statusLabel.setText(switch (result) {
+            case OPENED -> I18n.tr("main.filesOpened");
+            case CLOSED -> I18n.tr("main.filesClosed");
+            case UNAVAILABLE -> fileAreaUnavailableReason();
+        });
+        refreshFileEntryState();
+    }
+
+    /** 入口禁用原因只陈述当前标签事实，不把本地标签误报成可展开的远程文件区。 */
+    private String fileAreaUnavailableReason() {
+        if (terminalPanelController == null) return I18n.tr("main.filesNoTerminal");
+        if (terminalPanelController.getSelectedTabId() == null) return I18n.tr("main.filesNoTab");
+        if (terminalPanelController.getSelectedConnectionParams() == null) return I18n.tr("main.filesLocalTab");
+        return I18n.tr("main.filesUnavailable");
+    }
+
+    /** 底栏入口随当前标签状态置灰；禁用时文本与 tooltip 仍给出可见原因。 */
+    private void refreshFileEntryState() {
+        if (btnFilesDrawer == null) return;
+        TerminalPanelController.FileAreaState state = terminalPanelController == null
+                ? TerminalPanelController.FileAreaState.UNAVAILABLE
+                : terminalPanelController.fileAreaState();
+        boolean available = state != TerminalPanelController.FileAreaState.UNAVAILABLE;
+        btnFilesDrawer.setDisable(!available);
+        String text;
+        String help;
+        if (!available) {
+            text = I18n.tr("main.filesUnavailableShort");
+            help = fileAreaUnavailableReason();
         } else {
-            // 退回到终端视图后再切换
-            switchToTerminalView();
-            statusLabel.setText("请先打开终端，再使用文件抽屉");
+            boolean open = state == TerminalPanelController.FileAreaState.OPEN;
+            text = I18n.tr(open ? "main.filesOpen" : "main.filesClosedState");
+            help = I18n.tr(open ? "main.filesCollapseTip" : "main.filesExpandTip");
+        }
+        btnFilesDrawer.setText(text);
+        btnFilesDrawer.setTooltip(new Tooltip(help));
+        btnFilesDrawer.setAccessibleHelp(help);
+        if (navFiles != null) {
+            navFiles.setDisable(!available);
+            navFiles.setTooltip(new Tooltip(available ? I18n.tr("main.filesExpandTip") : help));
+            navFiles.setAccessibleHelp(help);
         }
     }
 
-    /** 连接成功后同步状态栏/顶栏目标主机 */
+    /** 把连接参数写入顶栏/底栏目标；顶栏只放短标识，完整目标放 tooltip。健康状态由当前标签的会话单独刷新。 */
     public void updateCurrentHostDisplay(ConnectionParams params) {
-        if (params == null) return;
-        String name = (params.getProfileName() != null && !params.getProfileName().isBlank())
+        if (params == null) {
+            clearCurrentTargetDisplay();
+            return;
+        }
+        String profileName = (params.getProfileName() != null && !params.getProfileName().isBlank())
                 ? params.getProfileName()
-                : params.getHost();
+                : null;
         String display = (params.getUsername() != null ? params.getUsername() + "@" : "")
                 + params.getHost() + ":" + params.getPort();
-        if (currentHostLabel != null) currentHostLabel.setText(name + " · " + display);
-        if (statusHostLabel != null) statusHostLabel.setText(name);
-        if (statusHealthLabel != null) statusHealthLabel.setText("已连接");
-        if (hostStatusDot != null) hostStatusDot.setStyle("-fx-text-fill: -fx-success-color;");
+        String shortLabel = profileName != null && profileName.length() <= 28 ? profileName : display;
+        if (currentHostLabel != null) {
+            currentHostLabel.setText(shortLabel);
+            currentHostLabel.setTooltip(new Tooltip(profileName == null ? display : profileName + " · " + display));
+        }
+        if (statusHostLabel != null) statusHostLabel.setText(profileName != null ? profileName : display);
+    }
+
+    /**
+     * 当前目标只从「当前选中的终端标签 + 该标签的 SSH 参数」派生：
+     * A/B 标签切换、切本地/提示标签都在这里统一刷新；没有 SSH 目标时清掉旧主机与 tooltip。
+     * 异步连接完成事件先在监听处校验仍是当前标签，避免旧会话把目标覆盖成非当前主机。
+     */
+    private void refreshCurrentTargetDisplay() {
+        String tabId = terminalPanelController == null ? null : terminalPanelController.getSelectedTabId();
+        if (tabId == null) {
+            clearCurrentTargetDisplay();
+            // 关闭最后一个会话不会有 current_active_tab 事件，这里同步清掉侧栏活动卡
+            if (activeSidebarTabId != null) monitorSidebarForTab(null);
+            refreshFileEntryState();
+            refreshSidebarMetricsVisibility();
+            return;
+        }
+        ConnectionParams params = selectedTabConnectionParams(tabId);
+        if (params == null) {
+            clearCurrentTargetDisplay();
+            refreshFileEntryState();
+            refreshSidebarMetricsVisibility();
+            return;
+        }
+        updateCurrentHostDisplay(params);
+        refreshConnectionHealthIndicator();
+        refreshFileEntryState();
+        refreshSidebarMetricsVisibility();
+    }
+
+    /** 选中标签上登记的连接参数优先；SSHService 注册表作为兜底。 */
+    private ConnectionParams selectedTabConnectionParams(String tabId) {
+        if (terminalPanelController != null) {
+            ConnectionParams stored = terminalPanelController.getSelectedConnectionParams();
+            if (stored != null) return stored;
+        }
+        return sshService == null || tabId == null ? null : sshService.getTabConnectionParams(tabId);
+    }
+
+    private void clearCurrentTargetDisplay() {
+        if (currentHostLabel != null) {
+            currentHostLabel.setText(I18n.tr("main.disconnected"));
+            currentHostLabel.setTooltip(new Tooltip(I18n.tr("main.disconnected")));
+        }
+        if (statusHostLabel != null) statusHostLabel.setText("—");
+        if (statusHealthLabel != null) statusHealthLabel.setText(I18n.tr("main.disconnected"));
+        if (hostStatusDot != null) hostStatusDot.setStyle(STATUS_DOT_IDLE_STYLE);
     }
 
     /** 安装 Agent 面板快捷键，行为与工具栏显隐按钮保持一致。 */
@@ -541,20 +763,77 @@ public class MainViewController extends BaseController implements Initializable 
 
     private void applyPanelVisibility() {
         if (serverPanel != null) {
+            // SplitPane retains item slots even for unmanaged children; detach the item to release its width.
+            if (mainSplitPane != null) {
+                if (serverOpen && !mainSplitPane.getItems().contains(serverPanel)) {
+                    mainSplitPane.getItems().add(0, serverPanel);
+                    setupLayoutPersistence();
+                } else if (!serverOpen) {
+                    mainSplitPane.getItems().remove(serverPanel);
+                }
+            }
             serverPanel.setVisible(serverOpen);
             serverPanel.setManaged(serverOpen);
         }
         // 右侧 AI 面板已移除
         if (btnToggleServer != null) {
-            btnToggleServer.setText(serverOpen ? "服务器" : "服务器 ›");
+            btnToggleServer.setText(serverOpen ? I18n.tr("main.servers") : I18n.tr("main.serversClosed"));
         }
         if (btnCollapseServer != null) {
             btnCollapseServer.setText(serverOpen ? "‹" : "›");
         }
         if (serverOpen && mainSplitPane != null) {
             double divider = LAYOUT_PREFS.getDouble(KEY_SERVER_DIVIDER, 0.14);
-            Platform.runLater(() -> mainSplitPane.setDividerPositions(divider));
+            Platform.runLater(() -> {
+                if (serverOpen && mainSplitPane.getItems().contains(serverPanel))
+                    mainSplitPane.setDividerPositions(divider);
+            });
         }
+    }
+
+    /**
+     * 给活动会话块独立的有限视口：内容自然高度超出时可内部滚动，
+     * 同时按侧栏高度 50% 与服务器树最小高度双重封顶，短窗口不会把树挤没。
+     * 包级可见，供真实 FXML 布局测试在不执行 initialize 时复用。
+     */
+    void configureSidebarScroll() {
+        if (activeSessionScroll == null || serverPanel == null || serverTree == null) return;
+        activeSessionScroll.setFitToWidth(true);
+        activeSessionScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        activeSessionScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        activeSessionScroll.setMinHeight(0);
+        if (activeSessionScroll.getContent() instanceof javafx.scene.layout.Region content) {
+            // 内容按自然高度排布，不被滚动视口压扁。
+            content.setMinHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
+        }
+
+        java.util.List<javafx.beans.Observable> dependencies = new java.util.ArrayList<>();
+        dependencies.add(serverPanel.heightProperty());
+        dependencies.add(serverPanel.widthProperty());
+        if (serverPanelHead != null) dependencies.add(serverPanelHead.heightProperty());
+        if (serverTreeFilter != null) dependencies.add(serverTreeFilter.heightProperty());
+        if (serverPanelHint != null) dependencies.add(serverPanelHint.heightProperty());
+        if (serverPanelSeparator != null) dependencies.add(serverPanelSeparator.heightProperty());
+        dependencies.add(serverTree.minHeightProperty());
+
+        activeSessionScroll.maxHeightProperty().bind(
+                javafx.beans.binding.Bindings.createDoubleBinding(() -> {
+                    double fixed = 8 + regionHeight(serverPanelHead)
+                            + regionHeight(serverTreeFilter)
+                            + regionHeight(serverPanelHint)
+                            + regionHeight(serverPanelSeparator)
+                            + serverPanel.getInsets().getTop()
+                            + serverPanel.getInsets().getBottom();
+                    double treeMin = Math.max(120, serverTree.getMinHeight());
+                    double panelHeight = serverPanel.getHeight();
+                    double ratioCap = panelHeight * ACTIVE_SESSION_MAX_HEIGHT_RATIO;
+                    double treeCap = panelHeight - fixed - treeMin;
+                    return Math.max(0, Math.min(ratioCap, treeCap));
+                }, dependencies.toArray(new javafx.beans.Observable[0])));
+    }
+
+    private static double regionHeight(javafx.scene.layout.Region region) {
+        return region == null ? 0 : Math.max(0, region.getHeight());
     }
 
     /** Restores and remembers the server navigation column width. */
@@ -576,7 +855,7 @@ public class MainViewController extends BaseController implements Initializable 
             var tm = com.runzhi.aishell.common.util.ThemeManager.getInstance();
             if (btnTheme != null) {
                 btnTheme.setText(tm.getCurrentTheme() == com.runzhi.aishell.common.util.ThemeManager.Theme.LIGHT
-                        ? "浅色" : "深色");
+                        ? I18n.tr("main.light") : I18n.tr("main.dark"));
             }
         } catch (Exception ignored) {
         }
@@ -594,71 +873,241 @@ public class MainViewController extends BaseController implements Initializable 
             Scene scene = contentArea != null ? contentArea.getScene() : null;
             if (scene != null) {
                 tm.applyTheme(scene, theme);
+                refreshThemeLabel();
+            } else if (contentArea != null) {
+                // initialize() runs before the FXML root is attached to its Scene.
+                // Apply the persisted theme once the Scene becomes available.
+                contentArea.sceneProperty().addListener((obs, oldScene, newScene) -> {
+                    if (newScene != null) {
+                        tm.applyTheme(newScene, theme);
+                        refreshThemeLabel();
+                    }
+                });
             }
         } catch (Exception e) {
             log.warn("恢复主题失败", e);
         }
     }
 
-    /** 将连接配置加载到左侧服务器导航面板（V1 §6） */
-    private void loadServerListIntoPanel() {
-        if (serverContent == null) {
-            return;
+    /**
+     * 服务器会话树（v6 阶段 2）：单击只选中，双击 / Enter 激活会话，筛选即时重建。
+     * 取代旧的服务器卡片：卡片单击即连接，无法区分「选中」与「激活」。
+     */
+    private void setupServerTree() {
+        if (serverTree == null) return;
+        serverTree.setShowRoot(false);
+        serverTree.setRoot(new javafx.scene.control.TreeItem<>());
+        serverTree.setCellFactory(tree -> new javafx.scene.control.TreeCell<>() {
+            @Override
+            protected void updateItem(ConnectionParams item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                if (item == null) {
+                    // 分组头：名称与计数在构建树时挂在 TreeItem 的 graphic（Label）上。
+                    // 这里不得 setGraphic(null) 清掉，否则分组头渲染成空白行。
+                    setText(null);
+                    setGraphic(getTreeItem() != null ? getTreeItem().getGraphic() : null);
+                    return;
+                }
+                setText(null);
+                boolean connected = isConnectedSession(item);
+                boolean agentOn = hasAgentActivity(item);
+                Label name = new Label(connectionDisplayName(item) + (agentOn ? " · Agent" : ""));
+                name.getStyleClass().add("server-node-name");
+                Label sub = new Label(item.getHost() + ":" + item.getPort()
+                        + " · " + (connected ? I18n.tr("main.online") : I18n.tr("main.disconnected")));
+                sub.getStyleClass().add("server-node-sub");
+                VBox box = new VBox(1, name, sub);
+                box.getStyleClass().add("server-node");
+                setGraphic(box);
+            }
+        });
+        // 单击只选中是 TreeView 默认行为；双击才激活
+        serverTree.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2 && event.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                activateSelectedTreeConnection();
+            }
+        });
+        // Enter 激活（消费掉，避免触发分组折叠）
+        serverTree.setOnKeyPressed(event -> {
+            if (event.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                if (activateSelectedTreeConnection()) event.consume();
+            }
+        });
+        if (serverTreeFilter != null) {
+            serverTreeFilter.textProperty().addListener((_, _, value) ->
+                    buildServerTree(value == null ? "" : value));
         }
+    }
+
+    /** 当前树选中的连接（无选中或选中分组头时返回 null）。单击只选中：不产生任何连接动作。 */
+    ConnectionParams selectedTreeConnection() {
+        if (serverTree == null) return null;
+        javafx.scene.control.TreeItem<ConnectionParams> selected = serverTree.getSelectionModel().getSelectedItem();
+        return selected == null ? null : selected.getValue();
+    }
+
+    boolean activateSelectedTreeConnection() {
+        javafx.scene.control.TreeItem<ConnectionParams> selected = serverTree.getSelectionModel().getSelectedItem();
+        if (selected == null || selected.getValue() == null) return false;
+        activateTreeConnection(selected.getValue());
+        return true;
+    }
+
+    /**
+     * 激活会话：已开标签则选中聚焦，否则新建标签并连接。
+     * 单击树节点不会走到这里——树选择不改变活动会话。
+     */
+    private void activateTreeConnection(ConnectionParams params) {
+        // Direct activation owns this request; broadcasting it would also trigger the terminal's deferred creator.
+        ensureTerminalPanelVisible();
+        if (terminalPanelController != null) {
+            terminalPanelController.activateConnection(params);
+        }
+        refreshCurrentTargetDisplay();
+        if (statusLabel != null) statusLabel.setText(I18n.tr("main.activated", connectionDisplayName(params)));
+    }
+
+    /** 连接是否在线：与连接列表、底栏共用 SSH 服务的同一份会话记录。 */
+    private boolean isConnectedSession(ConnectionParams params) {
+        return params != null && sshService != null && sshService.activeSessionCount(params) > 0;
+    }
+
+    /** 该连接是否存在运行中或待审批的 Agent 任务（树节点角标依据）。 */
+    private boolean hasAgentActivity(ConnectionParams params) {
+        AgentSessionTracker tracker = AgentSessionTracker.getInstance();
+        for (String sessionId : tracker.runningSessions()) {
+            if (sessionOwnsConnection(sessionId, params)) return true;
+        }
+        for (String sessionId : tracker.sessionsWithPending()) {
+            if (sessionOwnsConnection(sessionId, params)) return true;
+        }
+        return false;
+    }
+
+    private boolean sessionOwnsConnection(String sessionId, ConnectionParams params) {
+        if (terminalPanelController == null) return false;
+        for (javafx.scene.control.Tab tab : terminalPanelController.getTerminalTabs()) {
+            if (!sessionId.equals(tab.getId())) continue;
+            Object stored = tab.getProperties().get("connectionParams");
+            return stored instanceof ConnectionParams candidate
+                    && connectionKeyOf(candidate).equals(connectionKeyOf(params));
+        }
+        return false;
+    }
+
+    private String connectionKeyOf(ConnectionParams params) {
+        if (params == null || params.getHost() == null) return "";
+        return (params.getUsername() == null ? "" : params.getUsername())
+                + '@' + params.getHost() + ':' + params.getPort();
+    }
+
+    private String connectionDisplayName(ConnectionParams params) {
+        if (params == null) return "";
+        return (params.getProfileName() != null && !params.getProfileName().isBlank())
+                ? params.getProfileName() : params.getHost() + ":" + params.getPort();
+    }
+
+    /** 按筛选文本重建会话树；空文本展示全部分组。 */
+    private void buildServerTree(String filter) {
+        if (serverTree == null) return;
+        List<ConnectionParams> connections;
         try {
-            // ConfigManager 与连接列表同源（loadConnectionConfigs），比 ConnectionConfigManager 更稳
-            List<ConnectionParams> connections =
-                    com.runzhi.aishell.common.config.ConfigManager.getInstance().loadConnectionConfigs();
-            serverContent.getChildren().clear();
-
-            Label title = new Label("已保存连接");
-            title.setStyle("-fx-text-fill: -fx-text-secondary; -fx-font-size: 11px; -fx-font-weight: bold;");
-            serverContent.getChildren().add(title);
-
-            if (connections == null || connections.isEmpty()) {
-                Label empty = new Label("暂无保存的连接\n点击右上「+ 新建连接」创建");
-                empty.setWrapText(true);
-                empty.setStyle("-fx-text-fill: -fx-text-disabled;");
-                serverContent.getChildren().add(empty);
-                return;
-            }
-
-            for (ConnectionParams conn : connections) {
-                Button card = new Button();
-                card.setMaxWidth(Double.MAX_VALUE);
-                card.getStyleClass().add("server-card");
-                String name = (conn.getProfileName() != null && !conn.getProfileName().isBlank())
-                        ? conn.getProfileName()
-                        : conn.getHost();
-                String sub = conn.getUsername() + "@" + conn.getHost() + ":" + conn.getPort();
-                card.setText(name + "\n" + sub);
-                card.setWrapText(true);
-                card.setStyle("-fx-alignment: CENTER_LEFT; -fx-padding: 8;");
-                card.setOnAction(e -> {
-                    statusLabel.setText("连接 " + name + " …");
-                    com.runzhi.aishell.common.util.ParameterManager.getInstance()
-                            .put("connection_params", conn, 30000);
-                    switchToTerminalViewWithParams();
-                    if (currentHostLabel != null) {
-                        currentHostLabel.setText(name + " · " + sub);
-                    }
-                    if (statusHostLabel != null) {
-                        statusHostLabel.setText(name);
-                    }
-                });
-                serverContent.getChildren().add(card);
-            }
-
-            Label manage = new Label("在顶部「连接」中管理服务器");
-            manage.setStyle("-fx-text-fill: -fx-text-disabled; -fx-font-size: 11px;");
-            serverContent.getChildren().add(manage);
+            connections = com.runzhi.aishell.common.config.ConfigManager.getInstance().loadConnectionConfigs();
         } catch (Exception e) {
             log.error("加载服务器列表失败", e);
-            Label err = new Label("连接列表加载失败\n请打开顶部「连接」");
-            err.setStyle("-fx-text-fill: -fx-danger-color;");
-            err.setWrapText(true);
-            serverContent.getChildren().setAll(err);
+            connections = List.of();
         }
+        String keyword = filter == null ? "" : filter.trim().toLowerCase(java.util.Locale.ROOT);
+        Map<String, List<ConnectionParams>> grouped = new LinkedHashMap<>();
+        if (connections != null) {
+            for (ConnectionParams conn : connections) {
+                if (!keyword.isEmpty() && !matchesFilter(conn, keyword)) continue;
+                String group = (conn.getGroup() == null || conn.getGroup().isBlank())
+                        ? I18n.tr("main.defaultGroup") : conn.getGroup();
+                grouped.computeIfAbsent(group, ignored -> new java.util.ArrayList<>()).add(conn);
+            }
+        }
+        javafx.scene.control.TreeItem<ConnectionParams> root = new javafx.scene.control.TreeItem<>();
+        for (Map.Entry<String, List<ConnectionParams>> entry : grouped.entrySet()) {
+            javafx.scene.control.TreeItem<ConnectionParams> groupItem =
+                    new javafx.scene.control.TreeItem<>(null,
+                            new Label(entry.getKey() + " (" + entry.getValue().size() + ")"));
+            groupItem.setExpanded(true);
+            for (ConnectionParams conn : entry.getValue()) {
+                groupItem.getChildren().add(new javafx.scene.control.TreeItem<>(conn));
+            }
+            root.getChildren().add(groupItem);
+        }
+        serverTree.setRoot(root);
+    }
+
+    private boolean matchesFilter(ConnectionParams conn, String keyword) {
+        return (conn.getHost() != null && conn.getHost().toLowerCase(java.util.Locale.ROOT).contains(keyword))
+                || (conn.getProfileName() != null && conn.getProfileName().toLowerCase(java.util.Locale.ROOT).contains(keyword))
+                || (conn.getUsername() != null && conn.getUsername().toLowerCase(java.util.Locale.ROOT).contains(keyword));
+    }
+
+    /** 底栏审批定位：有待审批时显示数量与目标会话，点击切换到目标并展开 Agent。 */
+    private void updateApprovalLocator() {
+        if (statusApprovalLocator == null) return;
+        AgentSessionTracker tracker = AgentSessionTracker.getInstance();
+        int total = tracker.totalPendingApprovals();
+        if (total <= 0) {
+            statusApprovalLocator.setText("");
+            statusApprovalLocator.setVisible(false);
+            return;
+        }
+        String target = tracker.sessionsWithPending().stream().sorted().findFirst().orElse(null);
+        String display = target == null ? "" : " · "
+                + (terminalPanelController == null ? target : terminalPanelController.tabDisplayFor(target));
+        statusApprovalLocator.setText(I18n.tr("main.approvals", total, display));
+        statusApprovalLocator.setVisible(true);
+    }
+
+    @FXML
+    public void locateApproval() {
+        AgentSessionTracker tracker = AgentSessionTracker.getInstance();
+        String target = tracker.sessionsWithPending().stream().sorted().findFirst().orElse(null);
+        if (target == null) return;
+        ensureTerminalPanelVisible();
+        if (terminalPanelController != null) {
+            terminalPanelController.focusPendingApproval(target);
+        }
+        if (statusLabel != null) statusLabel.setText(I18n.tr("main.approvalLocated", target));
+    }
+
+    /** 顶栏命令面板：仅点击打开，不新增任何全局快捷键。 */
+    @FXML
+    public void openCommandPalette() {
+        if (commandPalette == null) {
+            commandPalette = new com.runzhi.aishell.ui.CommandPalette(buildPaletteItems());
+        }
+        commandPalette.showBelow(btnCommandPalette);
+    }
+
+    private java.util.List<com.runzhi.aishell.ui.CommandPalette.Item> buildPaletteItems() {
+        java.util.List<com.runzhi.aishell.ui.CommandPalette.Item> items = new java.util.ArrayList<>();
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.newConfig"), I18n.tr("main.file"), this::newConnection));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.openConfig"), I18n.tr("main.file"), this::openConfig));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.settings"), I18n.tr("main.file"), this::openSettings));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("workbench.agent"), "AI", this::openAgentWorkspace));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.terminal"), I18n.tr("main.view"), this::openTerminal));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.files"), I18n.tr("main.view"), this::openFiles));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.monitorPanel"), I18n.tr("main.view"), this::openMonitor));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.advancedMonitor"), I18n.tr("main.view"), this::openAdvancedMonitorCharts));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("workbench.aiAssistant"), "AI", this::openAIAssistant));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.history"), I18n.tr("main.view"), this::openCommandHistory));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.bookmarks"), I18n.tr("main.view"), this::openBookmarkPanel));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.reconnectAll"), I18n.tr("main.connections"), this::reconnectAllTerminals));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.disconnect"), I18n.tr("main.connections"), this::disconnectFromServer));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.switchTheme"), I18n.tr("main.view"), this::toggleTheme));
+        items.add(new com.runzhi.aishell.ui.CommandPalette.Item(I18n.tr("main.systemInfo"), I18n.tr("main.help"), this::openSystemInfo));
+        return items;
     }
 
     @FXML
@@ -698,7 +1147,7 @@ public class MainViewController extends BaseController implements Initializable 
                     .createThemeSelector(themeModule, null, null);
 
             Dialog<Void> dialog = new Dialog<>();
-            dialog.setTitle("终端设置");
+            dialog.setTitle(I18n.tr("main.terminalSettings"));
             dialog.setHeaderText("配置终端外观和行为");
 
             ButtonType applyButtonType = new ButtonType("应用", ButtonType.OK.getButtonData());
@@ -736,7 +1185,7 @@ public class MainViewController extends BaseController implements Initializable 
             }
 
             Stage stage = new Stage();
-            stage.setTitle("新建连接配置");
+            stage.setTitle(I18n.tr("main.newConfigTitle"));
             Scene scene = new Scene(root);
             // 新窗口直接使用当前主题入口，避免依赖模块管理器尚未设置的样式路径。
             var themeManager = com.runzhi.aishell.common.util.ThemeManager.getInstance();
@@ -788,13 +1237,13 @@ public class MainViewController extends BaseController implements Initializable 
         com.runzhi.aishell.service.TerminalCommandService commandService = manager.getTerminalCommandService();
         Object pane = com.runzhi.aishell.common.util.ParameterManager.getInstance().get("terminalTabPane");
         if (!(pane instanceof javafx.scene.control.TabPane tabPane) || tabService == null || commandService == null) {
-            statusLabel.setText("没有活动的终端，无法执行命令");
+            statusLabel.setText(I18n.tr("main.noTerminal"));
             log.warn("书签命令未执行：终端未就绪");
             return;
         }
         javafx.scene.control.Tab selected = tabPane.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            statusLabel.setText("没有活动的终端标签，无法执行命令");
+            statusLabel.setText(I18n.tr("main.noTab"));
             return;
         }
         javafx.scene.control.TextField input = tabService.getTabToInput().get(selected);
@@ -804,8 +1253,9 @@ public class MainViewController extends BaseController implements Initializable 
 
     @FXML
     public void openTerminal() {
-        switchToTerminalView();
-        statusLabel.setText("终端面板已打开");
+        ensureTerminalPanelVisible();
+        updateWorkModeIndicators("terminal");
+        statusLabel.setText(I18n.tr("main.terminalOpened"));
     }
 
     @FXML
@@ -817,20 +1267,8 @@ public class MainViewController extends BaseController implements Initializable 
             });
         } else {
             log.warn("Terminal panel controller is not initialized");
-            statusLabel.setText("终端面板控制器未初始化，请稍后再试");
+            statusLabel.setText(I18n.tr("main.terminalUnavailable"));
         }
-    }
-
-    @FXML
-    public void openFileTransfer() {
-        // 绑定当前终端标签的 SSH 上下文，否则新窗口的远程列表与传输没有可用连接。
-        final String tabId = terminalPanelController == null ? null : terminalPanelController.getSelectedTabId();
-        moduleManager.getNavigationManager().openInNewWindow("file-manager-panel.fxml", "文件管理器",
-                controller -> {
-                    if (controller instanceof FileManagerPanelController fileManager) {
-                        fileManager.setSshService(sshService, tabId);
-                    }
-                });
     }
 
     @FXML
@@ -841,23 +1279,27 @@ public class MainViewController extends BaseController implements Initializable 
                     if (sshService instanceof SSHServiceImpl) {
                         controller.setSshService((SSHServiceImpl) sshService);
                     }
+                    // FXML 只初始化一次：每次打开都要重新绑定当前活动会话
+                    controller.bindCurrentSession();
                 });
+        setActiveNav(navMonitor);
+        setPageContext(I18n.tr("main.monitor"), false);
     }
 
     @FXML
     public void openAdvancedMonitorCharts() {
-        moduleManager.getNavigationManager().openInNewWindow("advanced-monitor-charts.fxml", "高级监控图表");
+        moduleManager.getNavigationManager().openInNewWindow("advanced-monitor-charts.fxml", I18n.tr("main.advancedMonitor"));
     }
 
     @FXML
     public void openBookmarkPanel() {
-        moduleManager.getNavigationManager().openInNewWindow("bookmark-panel.fxml", "书签面板");
+        moduleManager.getNavigationManager().openInNewWindow("bookmark-panel.fxml", I18n.tr("main.bookmarks"));
     }
 
     @FXML
     public void openCommandHistory() {
         final String tabId = terminalPanelController == null ? null : terminalPanelController.getSelectedTabId();
-        moduleManager.getNavigationManager().openInNewWindow("command-history-dialog.fxml", "命令历史",
+        moduleManager.getNavigationManager().openInNewWindow("command-history-dialog.fxml", I18n.tr("main.history"),
                 controller -> {
                     // 传入当前标签页，使对话框展示该标签页的命令历史；
                     // 无标签页时由控制器回退到 "default"
@@ -895,7 +1337,7 @@ public class MainViewController extends BaseController implements Initializable 
     public void openDonation() {
         Platform.runLater(() -> {
             Dialog<Void> dialog = new Dialog<>();
-            dialog.setTitle("支持项目");
+            dialog.setTitle(I18n.tr("main.supportTitle"));
             UITools.setDialogCSS(dialog.getDialogPane());
 
             Label intro = new Label(
@@ -952,9 +1394,9 @@ public class MainViewController extends BaseController implements Initializable 
         int count = terminalPanelController == null ? 0
                 : terminalPanelController.attemptReconnectionForAllSshTabs();
         if (count == 0) {
-            statusLabel.setText("没有可重连的 SSH 终端");
+            statusLabel.setText(I18n.tr("main.nothingToReconnect"));
         } else {
-            statusLabel.setText("已对 " + count + " 个 SSH 终端发起重连");
+            statusLabel.setText(I18n.tr("main.reconnecting", count));
         }
     }
 
@@ -981,7 +1423,7 @@ public class MainViewController extends BaseController implements Initializable 
                 sshService = new SSHServiceImpl();
             }
 
-            statusLabel.setText(DEFAULT_STATUS_CONNECTING + params.getHost() + ":" + params.getPort() + " - " + params.getUsername());
+            statusLabel.setText(I18n.tr("main.connectingTo", params.getHost(), String.valueOf(params.getPort()), params.getUsername()));
 
             // 使用模块管理器传递连接参数
             com.runzhi.aishell.common.util.ParameterManager.getInstance().put("connection_params", params, 30000); // 30 秒超时
@@ -997,14 +1439,13 @@ public class MainViewController extends BaseController implements Initializable 
     }
 
     /**
-     * 切换到终端视图
+     * 切换到终端工作区，不隐式创建连接；新建操作由显式入口负责。
      */
     private void switchToTerminalView() {
         viewSwitcher.switchTo("terminal-panel.fxml", "terminal-panel",
                 TerminalPanelController.class, controller -> {
                     controller.setSshService(sshService);
-                    this.terminalPanelController = controller;
-                    controller.createNewTerminalTab();
+                    attachTerminalPanel(controller);
                 });
         updateWorkModeIndicators("terminal");
     }
@@ -1024,7 +1465,7 @@ public class MainViewController extends BaseController implements Initializable 
 
             if (terminalController != null) {
                 terminalController.setSshService(sshService);
-                this.terminalPanelController = terminalController;
+                attachTerminalPanel(terminalController);
 
                 Platform.runLater(() -> {
                     if (params != null) {
@@ -1037,6 +1478,7 @@ public class MainViewController extends BaseController implements Initializable 
                 log.error("TerminalPanelController not available after delay");
             }
         });
+        updateWorkModeIndicators("terminal");
     }
 
     /**
@@ -1046,7 +1488,7 @@ public class MainViewController extends BaseController implements Initializable 
         viewSwitcher.switchTo("terminal-panel.fxml", "terminal-panel",
                 TerminalPanelController.class, controller -> {
                     controller.setSshService(sshService);
-                    this.terminalPanelController = controller;
+                    attachTerminalPanel(controller);
                     Platform.runLater(() -> {
                         if (params != null) {
                             controller.createNewTerminalTabWithParams(params);
@@ -1056,38 +1498,87 @@ public class MainViewController extends BaseController implements Initializable 
                     });
                 });
         updateWorkModeIndicators("terminal");
-        if (params != null) {
-            String host = params.getHost();
-            String user = params.getUsername();
-            String display = (user != null ? user + "@" : "") + host;
-            if (currentHostLabel != null) {
-                currentHostLabel.setText(display);
-            }
-            if (statusHostLabel != null) {
-                statusHostLabel.setText(params.getProfileName() != null
-                        ? params.getProfileName() : host);
-            }
-            if (statusHealthLabel != null) {
-                statusHealthLabel.setText("连接中");
-            }
+    }
+
+    /** V1 状态栏指标同步：只表达“当前在哪一页”，连接状态与目标统一从当前标签读取 */
+    private void updateWorkModeIndicators(String mode) {
+        if (!"terminal".equals(mode)) return;
+        setPageContext(I18n.tr("main.terminal"), true);
+        setActiveNav(navTerminal);
+        refreshCurrentTargetDisplay();
+    }
+
+    /** 顶栏导航任何时刻只保留一个选中项；独立窗口不改变页面归属。 */
+    private void setActiveNav(javafx.scene.control.Button active) {
+        for (javafx.scene.control.Button button : new javafx.scene.control.Button[]{navConnections, navTerminal, navMonitor}) {
+            if (button != null) button.getStyleClass().remove("active");
+        }
+        if (active != null && !active.getStyleClass().contains("active")) {
+            active.getStyleClass().add("active");
         }
     }
 
-    /** V1 状态栏指标同步 */
-    private void updateWorkModeIndicators(String mode) {
-        if ("terminal".equals(mode)) {
-            if (statusTerminalTab != null) statusTerminalTab.setText("Terminal");
-            if (statusHealthLabel != null && "就绪".equals(statusHealthLabel.getText())) {
-                statusHealthLabel.setText("工作区");
-            }
-            if (navTerminal != null) navTerminal.getStyleClass().add("active");
+    /** 底栏左端只描述当前页面；文件抽屉与侧栏指标只在终端页有意义。 */
+    private void setPageContext(String pageLabel, boolean terminalPage) {
+        terminalContext = terminalPage;
+        if (statusTerminalTab != null) statusTerminalTab.setText(pageLabel);
+        if (btnFilesDrawer != null) {
+            btnFilesDrawer.setVisible(terminalPage);
+            btnFilesDrawer.setManaged(terminalPage);
         }
+        if (statusPageSeparator != null) {
+            statusPageSeparator.setVisible(terminalPage);
+            statusPageSeparator.setManaged(terminalPage);
+        }
+        refreshSidebarMetricsVisibility();
+    }
+
+    /**
+     * 指标组只在「终端页 + 当前活动 SSH 已连接」时显示；本地/提示页、连接管理页、
+     * 监控页和断开状态都释放高度，但 activeSessionTitle/Name 身份信息始终保留。
+     */
+    private void refreshSidebarMetricsVisibility() {
+        if (metricsGroup == null) return;
+        boolean visible = terminalContext && activeSessionConnected();
+        metricsGroup.setVisible(visible);
+        metricsGroup.setManaged(visible);
+    }
+
+    private boolean activeSessionConnected() {
+        if (sshService == null || terminalPanelController == null) return false;
+        String tabId = terminalPanelController.getSelectedTabId();
+        if (tabId == null) return false;
+        var connection = sshService.getTabConnection(tabId);
+        return connection != null && connection.isConnected();
+    }
+
+    /** 健康字段只表达当前会话的连接状态，不再承载页面名称。 */
+    private void refreshConnectionHealthIndicator() {
+        if (statusHealthLabel == null) return;
+        String tabId = terminalPanelController == null ? null : terminalPanelController.getSelectedTabId();
+        var connection = (sshService == null || tabId == null) ? null : sshService.getTabConnection(tabId);
+        boolean connected = connection != null && connection.isConnected();
+        statusHealthLabel.setText(I18n.tr(connected ? "main.connected" : "main.disconnected"));
+        if (hostStatusDot != null) {
+            hostStatusDot.setStyle(connected ? STATUS_DOT_CONNECTED_STYLE : STATUS_DOT_IDLE_STYLE);
+        }
+    }
+
+    /** 会话变化后刷新连接列表、树与当前目标；两处都读 SSH 服务里的同一份记录。 */
+    private void refreshSessionIndicators() {
+        if (connectionListController != null) connectionListController.refreshStatuses();
+        // 树的单元格在 item 不变时不会重建，必须显式刷新，否则一直显示旧状态
+        if (serverTree != null) serverTree.refresh();
+        refreshCurrentTargetDisplay();
     }
 
     /**
      * 初始化连接列表面板
      */
     private void initializeConnectionList() {
+        setActiveNav(navConnections);
+        setPageContext(I18n.tr("main.connections"), false);
+        refreshConnectionHealthIndicator();
         viewSwitcher.switchTo("connection-list.fxml", "white-background",
                 ConnectionListController.class, controller -> {
                     // 保存引用，使文件菜单的导入/导出连接能委托到连接列表控制器
@@ -1102,6 +1593,7 @@ public class MainViewController extends BaseController implements Initializable 
     @FXML
     public void openConnectionList() {
         initializeConnectionList();
+        if (connectionListController != null) connectionListController.refreshStatuses();
     }
 
     /**
@@ -1119,7 +1611,7 @@ public class MainViewController extends BaseController implements Initializable 
             String sysInfo = SystemInfoProvider.getSystemInfo();
 
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("系统信息");
+            alert.setTitle(I18n.tr("main.systemInfo"));
             alert.setHeaderText("系统详细信息");
             alert.setContentText(sysInfo);
             alert.showAndWait();

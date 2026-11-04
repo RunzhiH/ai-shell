@@ -26,12 +26,19 @@ import java.util.UUID;
  * 终端面板按 Tab 各持一个 Store，若各自维护独立内存列表与实例锁，
  * 一个 Tab 写回后另一个 Tab 的旧数据会把队列整表覆盖回去，已完成任务被"复活"。
  */
+@lombok.extern.slf4j.Slf4j
 public final class TransferQueueStore {
     public enum Direction { UPLOAD, DOWNLOAD }
-    public enum Status { PENDING, RUNNING, INTERRUPTED }
-    public record Job(String id, Direction direction, String host, String username,
+    public enum Status { PENDING, RUNNING, INTERRUPTED, FAILED, CANCELLED }
+    public record Job(String id, Direction direction, String host, String username, int port,
                       List<String> sources, String destination, String policy,
-                      Status status, String updatedAt) {}
+                      Status status, String updatedAt) {
+        /** Legacy metadata has unknown port; it must not match a verified endpoint. */
+        public Job(String id, Direction direction, String host, String username,
+                   List<String> sources, String destination, String policy, Status status, String updatedAt) {
+            this(id, direction, host, username, 0, sources, destination, policy, status, updatedAt);
+        }
+    }
 
     private static final Map<Path, TransferQueueStore> INSTANCES = new HashMap<>();
     private static final Object REGISTRY_LOCK = new Object();
@@ -40,6 +47,9 @@ public final class TransferQueueStore {
     private final Path file;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private final List<Job> jobs;
+    private final java.util.concurrent.CopyOnWriteArrayList<Runnable> listeners=new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final java.util.concurrent.ConcurrentHashMap<String,String> progress=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String,Runnable> cancelHandlers=new java.util.concurrent.ConcurrentHashMap<>();
 
     /** 仅供测试：清空共享实例注册表，模拟进程重启后的重新加载。 */
     static void resetSharedInstancesForTest() {
@@ -80,7 +90,20 @@ public final class TransferQueueStore {
 
     public Job enqueue(Direction direction, String host, String username,
                        List<String> sources, String destination, String policy) {
-        return delegate.enqueue0(direction, host, username, sources, destination, policy);
+        return delegate.enqueue0(direction, host, username, 0, sources, destination, policy);
+    }
+
+    /** Persist the remote endpoint's explicit port; zero means legacy/unknown identity. */
+    public Job enqueue(Direction direction, String host, int port, String username,
+                       List<String> sources, String destination, String policy) {
+        if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid transfer endpoint port");
+        return delegate.enqueue0(direction, host, username, port, sources, destination, policy);
+    }
+
+    /** Recover only an exact endpoint; never guess a port for legacy records. */
+    public List<Job> recoverable(String host, int port, String username) {
+        return port < 1 ? List.of() : delegate.recoverable0(host, username).stream()
+                .filter(job -> job.port() == port).toList();
     }
 
     public void markRunning(String id) { delegate.update0(id, Status.RUNNING); }
@@ -90,9 +113,44 @@ public final class TransferQueueStore {
 
     public List<Job> recoverable(String host, String username) { return delegate.recoverable0(host, username); }
 
-    private synchronized Job enqueue0(Direction direction, String host, String username,
+    /** Snapshot metadata only; callers may display all sessions without borrowing their credentials. */
+    public List<Job> snapshot() { return delegate.snapshot0(); }
+    private synchronized List<Job> snapshot0() { return List.copyOf(jobs); }
+    public AutoCloseable observe(Runnable listener) { delegate.listeners.add(listener); return ()->delegate.listeners.remove(listener); }
+    public void markPending(String id) { delegate.update0(id,Status.PENDING); }
+    public void markFailed(String id) { delegate.update0(id,Status.FAILED); }
+    public void markCancelled(String id) { delegate.update0(id,Status.CANCELLED); }
+    public void registerCancel(String id,Runnable cancel) { delegate.cancelHandlers.put(id,cancel); }
+    public void clearCancel(String id) { delegate.cancelHandlers.remove(id); }
+    public boolean canCancel(String id) { return delegate.cancelHandlers.containsKey(id); }
+    /** Running jobs route cancellation to their owner; pending jobs are skipped by the worker. */
+    public void cancel(String id) { Runnable cancel=delegate.cancel0(id); if(cancel!=null) cancel.run(); }
+    private synchronized Runnable cancel0(String id) {
+        Job job=jobs.stream().filter(item->item.id().equals(id)).findFirst().orElse(null);
+        if(job==null) return null;
+        if(job.status()==Status.PENDING) update0(id,Status.CANCELLED);
+        return job.status()==Status.PENDING || job.status()==Status.RUNNING ? cancelHandlers.get(id) : null;
+    }
+    /** Atomic claim prevents a queued cancellation from being overwritten by a worker start. */
+    public boolean startJob(String id) { return delegate.start0(id); }
+    private synchronized boolean start0(String id) {
+        Job job=jobs.stream().filter(item->item.id().equals(id)).findFirst().orElse(null);
+        if(job==null || job.status()!=Status.PENDING) return false;
+        update0(id,Status.RUNNING); return true;
+    }
+    public String progress(String id) { return delegate.progress.getOrDefault(id,"—"); }
+    public void progress(String id,String value) { delegate.progress.put(id,value); delegate.notifyListeners(); }
+    private void notifyListeners() {
+        for(Runnable listener:listeners) try { listener.run(); } catch(RuntimeException failure) { log.warn("Queue observer failed",failure); }
+    }
+    public void removeFailed(String id) {
+        Job job=snapshot().stream().filter(item->item.id().equals(id)).findFirst().orElse(null);
+        if(job!=null && job.status()!=Status.RUNNING && job.status()!=Status.PENDING) complete(id);
+    }
+
+    private synchronized Job enqueue0(Direction direction, String host, String username, int port,
                                       List<String> sources, String destination, String policy) {
-        Job job = new Job(UUID.randomUUID().toString(), direction, safe(host), safe(username),
+        Job job = new Job(UUID.randomUUID().toString(), direction, safe(host), safe(username), port,
                 List.copyOf(sources), destination, policy, Status.PENDING, Instant.now().toString());
         jobs.add(job);
         write();
@@ -108,6 +166,8 @@ public final class TransferQueueStore {
 
     private synchronized void complete0(String id) {
         jobs.removeIf(job -> job.id().equals(id));
+        cancelHandlers.remove(id);
+        progress.remove(id);
         write();
     }
 
@@ -117,7 +177,7 @@ public final class TransferQueueStore {
     }
 
     private Job withStatus(Job job, Status status) {
-        return new Job(job.id(), job.direction(), job.host(), job.username(), job.sources(),
+        return new Job(job.id(), job.direction(), job.host(), job.username(), job.port(), job.sources(),
                 job.destination(), job.policy(), status, Instant.now().toString());
     }
 
@@ -143,6 +203,7 @@ public final class TransferQueueStore {
         } catch (IOException e) {
             throw new IllegalStateException("无法保存传输队列: " + file, e);
         }
+        notifyListeners();
     }
 
     private static String safe(String value) { return value == null ? "" : value; }

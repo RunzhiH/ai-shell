@@ -8,6 +8,9 @@ package com.runzhi.aishell.terminal;
 import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.TextField;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import org.fxmisc.richtext.InlineCssTextArea;
 
 import java.util.Objects;
 
@@ -29,6 +32,36 @@ public final class TerminalInputBinder {
         if (reconnectButton != null && reconnect != null) reconnectButton.setOnAction(event -> reconnect.run());
         modeChoice.valueProperty().addListener((observable, oldValue, newValue) -> applyMode(input, executeButton, newValue));
         applyMode(input, executeButton, modeChoice.getValue());
+    }
+
+    /**
+     * 输出区是只读历史，但打印字符会转发到命令输入。删除键必须同样转发，
+     * 否则焦点在输出区时只能追加、不能退格。
+     */
+    public static void forwardOutputEditingKeys(InlineCssTextArea output, TextField input) {
+        Objects.requireNonNull(output, "output");
+        Objects.requireNonNull(input, "input");
+        output.addEventFilter(KeyEvent.KEY_TYPED, event -> {
+            if (!event.isControlDown() && !event.isAltDown() && !event.isMetaDown()
+                    && event.getCharacter() != null && !event.getCharacter().isEmpty()
+                    && event.getCharacter().chars().allMatch(ch -> ch >= 0x20 && ch != 0x7f)) {
+                input.appendText(event.getCharacter());
+                input.requestFocus();
+                input.positionCaret(input.getLength());
+                event.consume();
+            }
+        });
+        output.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.BACK_SPACE || event.getCode() == KeyCode.DELETE) {
+                // 输出区转发字符时总是追加到命令末尾；删除也定位到末尾，
+                // 避免 TextField 失焦后 caret 归零导致退格无效或误删开头。
+                input.requestFocus();
+                input.positionCaret(input.getLength());
+                if (event.getCode() == KeyCode.BACK_SPACE) input.deletePreviousChar();
+                else input.deleteNextChar();
+                event.consume();
+            }
+        });
     }
 
     private static void applyMode(TextField input, Button executeButton, String mode) {

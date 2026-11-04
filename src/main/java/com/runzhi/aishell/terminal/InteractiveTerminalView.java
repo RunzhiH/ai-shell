@@ -20,9 +20,12 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import java.util.function.Consumer;
 
 /** Mounts a real xterm-compatible terminal emulator into an existing terminal tab. */
@@ -54,7 +57,20 @@ public final class InteractiveTerminalView {
             index = parent.getChildren().indexOf(existing.getPane());
         }
 
-        JschTtyConnector connector = new JschTtyConnector(session, title, directoryListener);
+        // 复用已存在的 ZMODEM 浮层与支持对象（自动重连重新挂接时），否则新建
+        ZModemOverlay overlay = findById(tab.getContent(), "zmodemOverlay") instanceof ZModemOverlay existingOverlay
+                ? existingOverlay : null;
+        TerminalZModemSupport zmodemSupport;
+        if (overlay != null && overlay.getUserData() instanceof TerminalZModemSupport existingSupport) {
+            zmodemSupport = existingSupport;
+            zmodemSupport.resetCancel();
+        } else {
+            if (overlay == null) overlay = new ZModemOverlay();
+            zmodemSupport = new TerminalZModemSupport(tab, overlay);
+            overlay.setUserData(zmodemSupport);
+        }
+
+        JschTtyConnector connector = new JschTtyConnector(session, title, directoryListener, zmodemSupport);
         DarkTerminalSettings settings = new DarkTerminalSettings();
         JediTermFxWidget widget = new ThemedTerminalWidget(120, 36, settings);
         widget.setTtyConnector(connector);
@@ -64,9 +80,22 @@ public final class InteractiveTerminalView {
         terminalPane.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
         terminalPane.setStyle("-fx-background-color: #0d1117;");
 
-        parent.getChildren().set(index, terminalPane);
-        if (parent instanceof javafx.scene.layout.VBox) {
-            javafx.scene.layout.VBox.setVgrow(terminalPane, javafx.scene.layout.Priority.ALWAYS);
+        Node mounted;
+        if (overlay.getParent() instanceof StackPane holder && holder.getParent() == parent) {
+            // 自动重连：只替换终端面板，浮层保持在原容器里
+            parent.getChildren().set(index, terminalPane);
+            mounted = terminalPane;
+        } else {
+            StackPane holder = new StackPane(terminalPane, overlay);
+            holder.setMinSize(0, 0);
+            holder.setStyle("-fx-background-color: #0d1117;");
+            StackPane.setAlignment(overlay, Pos.BOTTOM_LEFT);
+            StackPane.setMargin(overlay, new Insets(0, 0, 14, 14));
+            parent.getChildren().set(index, holder);
+            mounted = holder;
+        }
+        if (parent instanceof VBox) {
+            VBox.setVgrow(mounted, javafx.scene.layout.Priority.ALWAYS);
         }
 
         tab.getProperties().put("interactiveTerminalWidget", widget);
@@ -214,10 +243,9 @@ public final class InteractiveTerminalView {
     public static boolean copySelection(Tab tab) {
         JediTermFxWidget widget = widget(tab);
         if (widget == null) return false;
-        String selected = widget.getTerminalPanel().selectedTextProperty().get();
-        if (selected != null && !selected.isEmpty()) {
-            widget.getTerminalPanel().handleCopy(false, false);
-        }
+        // selectedTextProperty 只在选择完成时刷新；菜单点击可能早于刷新，
+        // 因此不能以它作为是否执行复制的门槛，交给 TerminalPanel 自行判断选区。
+        widget.getTerminalPanel().handleCopy(false, false);
         widget.getPreferredFocusableNode().requestFocus();
         return true;
     }

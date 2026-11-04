@@ -36,7 +36,7 @@ public class ZhipuAdapter extends BaseAIAdapter implements StreamingAIAdapter {
             return "Error: Zhipu adapter not configured. Please set API key.";
         }
 
-        JsonObject body = createMessageRequestBody(query, currentTemperature(), currentMaxTokens());
+        JsonObject body = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
         Map<String, String> headers = Map.of("Content-Type", "application/json", "Authorization", generateAuthorization());
         return executeJsonRequest("Zhipu", () -> HttpClientUtil.doPost(baseUrl, body, headers), this::extractOpenAICompatible);
     }
@@ -44,7 +44,7 @@ public class ZhipuAdapter extends BaseAIAdapter implements StreamingAIAdapter {
     public void streamQuery(String query, Consumer<String> delta, BooleanSupplier cancelled) throws Exception {
         // 与非流式 sendQuery 一致：未配置时直接拒绝，避免发出 “Authorization: Bearer null”（2026-10-23 审计 P1-8）
         if (!isConfigured()) throw new IllegalStateException(getName() + " 未配置 API Key，无法发起流式请求");
-        streamChatCompletions(createMessageRequestBody(query, currentTemperature(), currentMaxTokens()),
+        streamChatCompletions(createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens()),
                 Map.of("Content-Type", "application/json", "Authorization", generateAuthorization()),
                 delta, cancelled);
     }

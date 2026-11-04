@@ -1,178 +1,6 @@
-/* ============================================================
-   AIShell Design Tokens + Components — Dark（默认，对齐 index.html）
-   参考 ui.css / 《AIShell UI 优化方案 V1》
-   本文件是 ThemeManager 深色主样式（App 启动默认加载）
-   ============================================================ */
-.root {
-    -fx-app-bg:           #0D1117;
-    -fx-panel-bg:         #161B22;
-    -fx-elevated-bg:      #21262D;
-    -fx-hover-bg:         #292E36;
-    -fx-sidebar-bg:       #161B22;
+/* AIShell v6 shared controls. Dark is the default; light-theme.css overrides tokens. */
 
-    -fx-border-default:   #30363D;
-    -fx-border-strong:    #484F58;
-
-    -fx-text-primary:     #E6EDF3;
-    -fx-text-secondary:   #8B949E;
-    -fx-text-disabled:    #6E7681;
-    -fx-text-inverse:     #04101F;
-
-    -fx-primary-color:    #58A6FF;
-    -fx-primary-hover:    #79C0FF;
-    -fx-ai-color:         #A371F7;
-    -fx-success-color:    #3FB950;
-    -fx-warning-color:    #D29922;
-    -fx-danger-color:     #F85149;
-    -fx-info-color:       #58A6FF;
-
-    /* 兼容旧变量名 */
-    -fx-accent-color:     #58A6FF;
-    -fx-secondary-color:  #79C0FF;
-    -fx-content-bg:       #161B22;
-    -fx-light-bg:         #21262D;
-    -fx-dark-bg:          #0D1117;
-    -fx-border-color:     #30363D;
-    -fx-hover-color:      #292E36;
-    -fx-selected-color:   #1F6FEB;
-
-    -fx-radius-sm: 4px;
-    -fx-radius-md: 6px;
-    -fx-code-bg: #0D1117;
-}
-
-.root {
-    -fx-background-color: -fx-app-bg;
-    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-    -fx-font-size: 13px;
-}
-
-.label {
-    -fx-text-fill: -fx-text-primary;
-}
-
-/* ---------- 按钮：Primary / Secondary / Ghost ---------- */
-.button, .primary-button, .secondary-button, .toolbar-button,
-.command-button, .nav-button, .nav-item, .ip-button, .ai-command-btn,
-.ai-command-btn-danger, .status-item, .new-tab-button, .connect-button,
-.ai-config-button, .clear-chat-button {
-    -fx-background-radius: 4;
-    -fx-border-radius: 4;
-    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-    -fx-font-size: 13px;
-    -fx-padding: 6 12;
-    -fx-cursor: hand;
-}
-
-/* 默认 Ghost — 禁止 #ccc/#e0e0e0 浅色残留 */
-.button {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-text-secondary;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1;
-}
-
-.button:hover {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-text-fill: -fx-text-primary;
-}
-
-.button:pressed {
-    -fx-background-color: -fx-hover-bg;
-}
-
-.button:disabled {
-    -fx-opacity: 0.45;
-}
-
-.primary-button, .command-button, .new-tab-button, .connect-button {
-    -fx-background-color: -fx-primary-color;
-    -fx-text-fill: -fx-text-inverse;
-    -fx-font-weight: bold;
-    -fx-border-color: transparent;
-}
-
-.primary-button:hover, .command-button:hover,
-.new-tab-button:hover, .connect-button:hover {
-    -fx-background-color: -fx-primary-hover;
-}
-
-.secondary-button, .toolbar-button {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-text-fill: -fx-text-primary;
-    -fx-border-color: -fx-border-default;
-}
-
-.secondary-button:hover, .toolbar-button:hover {
-    -fx-background-color: -fx-hover-bg;
-}
-
-.nav-button, .nav-item, .status-item, .ai-command-btn, .ip-button {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-text-secondary;
-    -fx-border-color: transparent;
-}
-
-.nav-button:hover, .nav-item:hover, .status-item:hover,
-.ai-command-btn:hover, .ip-button:hover {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-text-fill: -fx-text-primary;
-}
-
-/* ---------- 输入 ---------- */
-.text-field, .text-area, .combo-box, .choice-box, .password-field,
-.search-field, .path-field, .model-switcher-choice {
-    -fx-background-color: -fx-code-bg;
-    -fx-text-fill: -fx-text-primary;
-    -fx-prompt-text-fill: -fx-text-disabled;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1;
-    -fx-background-radius: 4;
-    -fx-border-radius: 4;
-    -fx-padding: 5 8;
-    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-    -fx-font-size: 13px;
-}
-
-.text-field:focused, .text-area:focused,
-.combo-box:focused, .choice-box:focused {
-    -fx-border-color: -fx-primary-color;
-}
-
-.combo-box > .list-cell, .choice-box > .label, .choice-box > .text {
-    -fx-text-fill: -fx-text-primary;
-}
-
-/* ---------- 表格 / 列表 ---------- */
-.table-view, .list-view {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1;
-    -fx-background-radius: 4;
-}
-
-.table-row-cell, .list-cell {
-    -fx-background-color: -fx-panel-bg;
-    -fx-text-fill: -fx-text-primary;
-    -fx-border-color: transparent;
-    -fx-font-size: 12px;
-}
-
-.table-cell {
-    -fx-text-fill: -fx-text-primary;
-    -fx-border-color: transparent;
-}
-
-.table-view .column-header-background,
-.table-view .filler,
-.table-view .column-header {
-    -fx-background-color: -fx-elevated-bg;
-}
-
-.table-view .column-header .label {
-    -fx-text-fill: -fx-text-secondary;
-}
-
+/* Compatibility for view-specific selectors still used by existing FXML. */
 .table-row-cell:selected, .list-cell:selected {
     -fx-background-color: -fx-elevated-bg;
 }
@@ -181,189 +9,13 @@
     -fx-background-color: -fx-hover-bg;
 }
 
-/* ---------- Tab ---------- */
-.tab-pane > .tab-header-area {
-    -fx-background-color: -fx-panel-bg;
-}
-
-.tab {
-    -fx-background-color: transparent;
-    -fx-background-radius: 0;
-    -fx-padding: 6 12;
-    -fx-border-color: transparent;
-}
-
-.tab:selected {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent transparent -fx-primary-color transparent;
-    -fx-border-width: 0 0 2 0;
-}
-
-.tab:selected .tab-label {
-    -fx-text-fill: -fx-primary-color;
-}
-
-.tab .tab-label {
-    -fx-text-fill: -fx-text-secondary;
-}
-
-.tab:hover .tab-label {
-    -fx-text-fill: -fx-text-primary;
-}
-
-/* ---------- 菜单 ---------- */
-.menu-bar {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 0 0 1 0;
-}
-
-.menu-bar .menu {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-text-primary;
-    -fx-padding: 5 10;
-}
-
-.menu-bar .menu:hover, .menu-bar .menu:showing {
-    -fx-background-color: -fx-elevated-bg;
-}
-
-.context-menu {
-    -fx-background-color: -fx-panel-bg !important;
-    -fx-border-color: -fx-border-default;
-    -fx-background-radius: 6;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 2);
-}
-
-.context-menu .menu-item {
-    -fx-background-color: transparent !important;
-    -fx-padding: 8 12;
-}
-
-.context-menu .menu-item:hover {
-    -fx-background-color: -fx-hover-bg !important;
-}
-
-.context-menu .menu-item > .label {
-    -fx-text-fill: -fx-text-primary !important;
-    -fx-font-size: 13px;
-}
-
-.context-menu .separator {
+.split-pane:vertical > .split-pane-divider, .split-pane:horizontal > .split-pane-divider {
     -fx-background-color: -fx-border-default;
-}
-
-/* ---------- 滚动条 ---------- */
-.scroll-bar {
-    -fx-background-color: transparent;
-}
-
-.scroll-bar .track {
-    -fx-background-color: transparent;
-}
-
-.scroll-bar .thumb {
-    -fx-background-color: -fx-border-strong;
-    -fx-background-radius: 3;
-}
-
-.scroll-bar .thumb:hover {
-    -fx-background-color: -fx-text-disabled;
-}
-
-/* ---------- Split / Separator ---------- */
-.split-pane {
-    -fx-background-color: -fx-app-bg;
-}
-
-.split-pane:vertical > .split-pane-divider,
-.split-pane:horizontal > .split-pane-divider {
-    -fx-background-color: -fx-border-default;
-}
-
-.separator {
-    -fx-background-color: -fx-border-default;
-    -fx-padding: 1 0;
-}
-
-/* ============================================================
-   主窗口（对齐 HTML：Server | Terminal | AI）
-   ============================================================ */
-.main-view {
-    -fx-background-color: -fx-app-bg;
-}
-
-.topbar, .main-split-pane .main-sidebar, .main-sidebar, .server-panel {
-    -fx-background-color: -fx-sidebar-bg;
-}
-
-.topbar {
-    -fx-padding: 0 12;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 0 0 1 0;
-    -fx-min-height: 40;
-}
-
-.brand-name {
-    -fx-font-size: 14px;
-    -fx-font-weight: bold;
-    -fx-text-fill: -fx-text-primary;
-}
-
-.brand-tag {
-    -fx-text-fill: -fx-text-disabled;
-    -fx-font-size: 10px;
-    -fx-padding: 1 6;
-    -fx-border-color: -fx-border-default;
-    -fx-background-radius: 2;
-    -fx-border-radius: 2;
-}
-
-.top-nav .nav-item {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-text-secondary;
-    -fx-font-size: 12px;
-    -fx-padding: 5 10;
 }
 
 .top-nav .nav-item:hover {
     -fx-background-color: -fx-hover-bg;
     -fx-text-fill: -fx-text-primary;
-}
-
-.top-nav .nav-item.active {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-text-fill: -fx-primary-color;
-}
-
-.current-host-label {
-    -fx-text-fill: -fx-text-disabled;
-    -fx-font-size: 11px;
-}
-
-.current-host-value {
-    -fx-text-fill: -fx-text-primary;
-    -fx-font-family: "Cascadia Mono", Consolas, monospace;
-    -fx-font-size: 12px;
-}
-
-.panel-head {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 0 0 1 0;
-    -fx-padding: 0 12;
-    -fx-min-height: 36;
-}
-
-.panel-title {
-    -fx-text-fill: -fx-text-secondary;
-    -fx-font-size: 11px;
-    -fx-font-weight: bold;
-}
-
-.ai-title {
-    -fx-text-fill: -fx-ai-color;
-    -fx-font-size: 13px;
 }
 
 .ai-panel {
@@ -372,26 +24,6 @@
     -fx-border-width: 0 0 0 1;
 }
 
-.server-card {
-    -fx-background-color: transparent;
-    -fx-background-radius: 4;
-    -fx-border-color: transparent;
-    -fx-text-fill: -fx-text-primary;
-    -fx-alignment: CENTER_LEFT;
-    -fx-padding: 8;
-    -fx-wrap-text: true;
-}
-
-.server-card:hover {
-    -fx-background-color: -fx-hover-bg;
-}
-
-.server-card.active {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-border-color: -fx-border-default;
-}
-
-/* 侧栏系统信息（保留旧监控） */
 .main-sidebar .system-info-label {
     -fx-text-fill: -fx-text-secondary;
     -fx-font-size: 12px;
@@ -405,41 +37,8 @@
     -fx-alignment: CENTER_RIGHT;
 }
 
-.sidebar-section-title {
-    -fx-text-fill: -fx-text-secondary;
-    -fx-font-size: 11px;
-    -fx-font-weight: bold;
-    -fx-padding: 6 10 4 10;
-}
-
-.sidebar-details {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-}
-
-.sidebar-details > .title {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-text-secondary;
-    -fx-font-size: 11px;
-    -fx-padding: 7 8;
-}
-
-.sidebar-details > .content {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-padding: 4 6 8 6;
-}
-
 .status-indicator {
     -fx-text-fill: -fx-success-color;
-}
-
-.toolbar {
-    -fx-background-color: -fx-panel-bg;
-    -fx-padding: 4 10;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 0 0 1 0;
-    -fx-alignment: CENTER_LEFT;
 }
 
 .toolbar-label {
@@ -447,71 +46,790 @@
     -fx-font-size: 12px;
 }
 
-.status-bar {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1 0 0 0;
-    -fx-min-height: 28;
-    -fx-padding: 0 12;
-}
-
-.status-bar .status-label {
-    -fx-text-fill: -fx-text-disabled;
-    -fx-font-size: 11px;
-}
-
-.status-ok { -fx-text-fill: -fx-success-color; }
-.status-warn { -fx-text-fill: -fx-warning-color; }
-.status-ai { -fx-text-fill: -fx-ai-color; }
-
-/* ---------- Terminal ---------- */
-.terminal-panel {
-    -fx-background-color: -fx-app-bg;
-}
-
-.terminal-toolbar {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 0 0 1 0;
-    -fx-padding: 4 8;
-}
-
 .terminal-toolbar .button {
     -fx-padding: 5 9;
     -fx-font-size: 12px;
-}
-
-.terminal-tab-pane {
-    -fx-background-color: -fx-app-bg;
 }
 
 .terminal-tab-pane .tab-header-area .tab-header-background {
     -fx-background-color: -fx-panel-bg;
 }
 
-.terminal-tab-pane .tab {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: transparent -fx-border-default -fx-border-default transparent;
-}
-
-.terminal-tab-pane .tab:selected {
-    -fx-background-color: -fx-elevated-bg;
-}
-
 .terminal-tab-pane .tab .tab-label {
     -fx-text-fill: -fx-text-secondary;
 }
 
-.terminal-tab-pane .tab:selected .tab-label {
+.terminal-drawer-container {
+    -fx-background-color: -fx-app-bg;
+}
+
+.storage-table {
+    -fx-background-color: -fx-sidebar-bg;
+    -fx-border-color: transparent;
+}
+
+.page-heading { -fx-padding: 0 0 4 0; }
+
+.connection-list-panel .toolbar { -fx-background-radius: 3; -fx-border-radius: 3; -fx-border-width: 1; }
+
+.table-row-cell:selected .table-cell { -fx-text-fill: -fx-primary-color; }
+
+.system-info-panel { -fx-padding: 16; }
+
+.sidebar-details-content { -fx-padding: 12 0; }
+
+.status-bar .status-item { -fx-min-height: 26; -fx-padding: 3 8; }
+
+.file-manager-area .table-cell { -fx-padding: 7 8; }
+
+.file-manager-area .table-row-cell { -fx-cell-size: 32; }
+
+.file-manager-area .column-header { -fx-size: 32; }
+
+.monitor-panel .progress-bar { -fx-max-width: infinity; }
+
+.menu-bar .menu-button { -fx-background-color: transparent; -fx-border-color: transparent; -fx-min-height: 26; -fx-padding: 4 10; }
+
+/* ============================================================
+   v6 public controls — semantic tokens and shared states
+   Dark values live here; light-theme.css overrides the same tokens.
+   普通操作使用 control-bg 浅表面，输入与焦点保留边界。
+   ============================================================ */
+.root {
+    /* v6 semantic palette — dark */
+    -fx-bg:                 #202020;
+    -fx-panel:              #252525;
+    -fx-control-bg:         #323232;
+    -fx-field-bg:           #2D2D2D;
+    -fx-inset-bg:           #282828;
+    -fx-line:               #484848;
+    -fx-control-border:     #7A7A7A;
+    -fx-text-primary:       #D4D4D4;
+    -fx-text-secondary:     #AAAAAA;
+    -fx-text-disabled:      #898989;
+    -fx-text-inverse:       #FFFFFF;
+    -fx-primary-color:      #426B94;
+    -fx-primary-hover:      #4F7BA6;
+    -fx-primary-edge:       #8DB4D8;
+    -fx-focus:              #8DB4D8;
+    -fx-focus-inverse:      #8DB4D8;
+    -fx-selected-bg:        #35485B;
+    -fx-selected-text:      #FFFFFF;
+    -fx-selected-muted:     #D4D4D4;
+    -fx-tree-selected-bg:   #303030;
+    -fx-tree-selected-text: #D4D4D4;
+    -fx-hover-bg:           #3A3A3A;
+    -fx-pressed-bg:         #444444;
+    -fx-success-color:      #91B783;
+    -fx-warning-color:      #E2C37F;
+    -fx-warning-bg:         #302B22;
+    -fx-warning-line:       #B89B60;
+    -fx-danger-color:       #E2A0A0;
+    -fx-terminal-bg:        #1E1E1E;
+    -fx-terminal-text:      #D4D4D4;
+    -fx-ansi-green:         #91B783;
+    -fx-ansi-red:           #D18383;
+    -fx-ai-color:           -fx-text-secondary;
+    -fx-info-color:         #8DB4D8;
+    -fx-white:              #FFFFFF;
+
+    /* Backward-compatible aliases used by existing views. */
+    -fx-app-bg:             #202020;
+    -fx-panel-bg:           #252525;
+    -fx-elevated-bg:        #323232;
+    -fx-sidebar-bg:         #252525;
+    -fx-border-default:     #484848;
+    -fx-border-strong:      #7A7A7A;
+    -fx-accent-color:       #426B94;
+    -fx-secondary-color:    #8DB4D8;
+    -fx-content-bg:         #252525;
+    -fx-light-bg:           #323232;
+    -fx-dark-bg:            #202020;
+    -fx-border-color:       #484848;
+    -fx-hover-color:        #3A3A3A;
+    -fx-selected-color:     #35485B;
+    -fx-code-bg:            #2D2D2D;
+    -fx-radius-sm: 3px;
+    -fx-radius-md: 3px;
+
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+
+    -fx-base: -fx-panel;
+    -fx-background: -fx-bg;
+    -fx-control-inner-background: -fx-field-bg;
+    -fx-control-inner-background-alt: -fx-field-bg;
+    -fx-accent: -fx-primary-color;
+    -fx-focus-color: -fx-focus;
+    -fx-faint-focus-color: transparent;
+    -fx-text-base-color: -fx-text-primary;
+    -fx-text-background-color: -fx-text-primary;
+    -fx-selection-bar: -fx-selected-bg;
+    -fx-selection-bar-non-focused: -fx-selected-bg;
+    -fx-selection-bar-text: -fx-selected-text;
+    -fx-mark-color: -fx-text-secondary;
+}
+
+.label {
     -fx-text-fill: -fx-text-primary;
 }
 
+/* Normal operations: a quiet control surface without a border. */
+.button, .toggle-button, .menu-button, .primary-button, .secondary-button,
+.toolbar-button, .nav-button, .nav-item, .command-button, .connect-button,
+.new-tab-button, .refresh-button, .upload-download-button, .ip-button,
+.ai-config-button, .clear-chat-button, .danger-button, .button-success {
+    -fx-background-color: -fx-control-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+    -fx-padding: 4 10;
+    -fx-min-height: 28;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+
+.button:hover, .toggle-button:hover, .menu-button:hover, .secondary-button:hover,
+.toolbar-button:hover, .refresh-button:hover, .upload-download-button:hover,
+.ip-button:hover, .ai-config-button:hover, .clear-chat-button:hover,
+.nav-item:hover, .nav-button:hover {
+    -fx-background-color: -fx-hover-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.button:pressed, .toggle-button:pressed, .menu-button:pressed,
+.secondary-button:pressed, .toolbar-button:pressed, .nav-item:pressed {
+    -fx-background-color: -fx-pressed-bg;
+}
+
+/* Primary / send / execute: the only blue-filled action layer. */
+.primary-button, .command-button, .new-tab-button, .connect-button,
+.button:default, .button-success {
+    -fx-background-color: -fx-primary-color;
+    -fx-text-fill: -fx-white;
+    -fx-border-color: -fx-primary-edge;
+    -fx-border-width: 1;
+    -fx-font-weight: bold;
+}
+
+.primary-button:hover, .command-button:hover, .new-tab-button:hover,
+.connect-button:hover, .button:default:hover, .button-success:hover {
+    -fx-background-color: -fx-primary-hover;
+}
+
+/* Selected navigation and Agent toggle. */
+.nav-item.active, .nav-button:selected, .toggle-button:selected,
+.menu-button:showing {
+    -fx-background-color: -fx-selected-bg;
+    -fx-text-fill: -fx-selected-text;
+    -fx-border-color: transparent;
+}
+
+.topbar .nav-item {
+    -fx-background-color: -fx-control-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.topbar .nav-item:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.topbar .nav-item.active {
+    -fx-background-color: -fx-selected-bg;
+    -fx-text-fill: -fx-selected-text;
+}
+
+.top-nav .nav-item {
+    -fx-padding: 4 10;
+    -fx-font-size: 13px;
+}
+
+.top-nav .nav-item.active {
+    -fx-background-color: -fx-selected-bg;
+    -fx-text-fill: -fx-selected-text;
+}
+
+/* Danger actions stay legible without becoming the loudest control. */
+.danger-button, .ai-command-btn-danger {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-danger-color;
+    -fx-border-color: transparent;
+}
+
+.danger-button:hover, .ai-command-btn-danger:hover {
+    -fx-background-color: -fx-warning-bg;
+    -fx-border-color: -fx-danger-color;
+}
+
+/* Status-bar entries are text actions, not filled buttons. */
+.status-item {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-border-color: transparent;
+    -fx-padding: 3 8;
+    -fx-min-height: 24;
+    -fx-font-size: 12px;
+}
+
+.status-item:hover {
+    -fx-background-color: -fx-control-bg;
+    -fx-text-fill: -fx-text-primary;
+}
+
+/* Disabled is transparent and less prominent, never a brighter surface. */
+.button:disabled, .toggle-button:disabled, .menu-button:disabled,
+.primary-button:disabled, .secondary-button:disabled, .toolbar-button:disabled,
+.nav-button:disabled, .nav-item:disabled, .command-button:disabled,
+.connect-button:disabled, .new-tab-button:disabled, .refresh-button:disabled,
+.upload-download-button:disabled, .ip-button:disabled,
+.ai-config-button:disabled, .clear-chat-button:disabled, .danger-button:disabled,
+.button-success:disabled, .status-item:disabled,
+.ai-command-btn:disabled, .ai-command-btn-danger:disabled {
+    -fx-opacity: 1;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -fx-text-disabled;
+}
+
+.menu-button:disabled > .arrow-button > .arrow {
+    -fx-background-color: -fx-text-disabled;
+}
+
+/* Visible keyboard focus for every control family. */
+.button:focused, .toggle-button:focused, .menu-button:focused,
+.secondary-button:focused, .toolbar-button:focused, .nav-button:focused,
+.nav-item:focused, .refresh-button:focused, .upload-download-button:focused,
+.ip-button:focused, .ai-config-button:focused, .clear-chat-button:focused,
+.danger-button:focused, .button-success:focused, .ai-command-btn:focused {
+    -fx-border-color: -fx-focus;
+    -fx-border-width: 1;
+}
+
+.primary-button:focused, .command-button:focused, .new-tab-button:focused,
+.connect-button:focused, .button:default:focused {
+    -fx-border-color: -fx-focus-inverse;
+    -fx-border-width: 1;
+}
+
+/* Inputs keep a real boundary; focus is stronger than the resting border. */
+.text-field, .text-area, .combo-box, .choice-box, .password-field,
+.search-field, .path-field, .spinner, .model-switcher-choice {
+    -fx-background-color: -fx-field-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-prompt-text-fill: -fx-text-secondary;
+    -fx-highlight-fill: -fx-selected-bg;
+    -fx-highlight-text-fill: -fx-selected-text;
+    -fx-border-color: -fx-control-border;
+    -fx-border-width: 1;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+    -fx-min-height: 28;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.text-field, .password-field, .search-field, .path-field {
+    -fx-padding: 4 8;
+}
+
+.text-area {
+    -fx-padding: 6 8;
+}
+
+.text-area .content {
+    -fx-background-color: -fx-field-bg;
+    -fx-background-radius: 3;
+}
+
+.text-field:focused, .text-area:focused, .combo-box:focused,
+.choice-box:focused, .password-field:focused, .search-field:focused,
+.path-field:focused, .spinner:focused {
+    -fx-border-color: -fx-focus;
+}
+
+.combo-box > .list-cell, .choice-box > .label, .choice-box > .text {
+    -fx-text-fill: -fx-text-primary;
+    -fx-background-color: transparent;
+}
+
+.combo-box .list-cell, .combo-box .list-cell:hover {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-padding: 4 8;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+}
+
+.combo-box-popup .list-cell:hover,
+.combo-box-popup .list-cell:selected {
+    -fx-background-color: -fx-selected-bg;
+    -fx-text-fill: -fx-selected-text;
+}
+
+/* Tables, trees and lists share one quiet surface. */
+.table-view, .tree-view, .list-view {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: transparent;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-padding: 1;
+}
+
+.table-view .column-header-background, .table-view .filler,
+.table-view .column-header {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: transparent transparent -fx-line transparent;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-weight: normal;
+}
+
+.table-row-cell, .list-cell, .tree-cell {
+    -fx-background-color: -fx-panel;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+}
+
+.table-cell {
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+}
+
+.table-row-cell:filled:hover, .list-cell:filled:hover,
+.tree-cell:filled:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.table-row-cell:filled:selected, .list-cell:filled:selected {
+    -fx-background-color: -fx-selected-bg;
+}
+
+.table-row-cell:filled:selected .table-cell, .list-cell:filled:selected {
+    -fx-text-fill: -fx-selected-text;
+}
+
+.tree-cell:filled:selected {
+    -fx-background-color: -fx-tree-selected-bg;
+    -fx-text-fill: -fx-tree-selected-text;
+}
+
+.table-row-cell:empty, .list-cell:empty {
+    -fx-background-color: -fx-panel;
+}
+
+.table-view .placeholder .label {
+    -fx-text-fill: -fx-text-secondary;
+}
+
+/* Tabs: selected uses the blue surface plus the underline. */
+.tab-pane > .tab-header-area,
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-color: -fx-panel;
+}
+
+.tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-border-color: transparent;
+    -fx-padding: 4 10;
+}
+
+.tab:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.tab:selected {
+    -fx-background-color: -fx-selected-bg;
+    -fx-border-color: transparent transparent -fx-primary-color transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.tab .tab-label {
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.tab:hover .tab-label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+.tab:selected .tab-label {
+    -fx-text-fill: -fx-selected-text;
+}
+
+.terminal-tab-pane .tab {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: transparent -fx-line -fx-line transparent;
+}
+
+.terminal-tab-pane .tab:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.terminal-tab-pane .tab:selected {
+    -fx-background-color: -fx-selected-bg;
+    -fx-border-color: transparent transparent -fx-primary-color transparent;
+    -fx-border-width: 0 0 2 0;
+}
+
+.terminal-tab-pane .tab:selected .tab-label {
+    -fx-text-fill: -fx-selected-text;
+}
+
+.tab-close-button {
+    -fx-background-color: -fx-text-secondary;
+}
+
+/* Menus and context menus. */
+.menu-bar {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 0 0 1 0;
+}
+
+.menu-bar .menu {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-padding: 5 10;
+}
+
+.menu-bar .menu:hover, .menu-bar .menu:showing {
+    -fx-background-color: -fx-control-bg;
+}
+
+.menu-bar .menu > .label {
+    -fx-text-fill: -fx-text-primary;
+}
+
+.context-menu {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0, 0, 2);
+}
+
+.context-menu .menu-item {
+    -fx-background-color: transparent;
+    -fx-padding: 8 12;
+}
+
+.context-menu .menu-item:hover, .context-menu .menu-item:focused {
+    -fx-background-color: -fx-selected-bg;
+}
+
+.context-menu .menu-item > .label {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 13px;
+}
+
+.context-menu .menu-item:focused > .label {
+    -fx-text-fill: -fx-selected-text;
+}
+
+.context-menu .separator {
+    -fx-background-color: -fx-line;
+}
+
+/* Tooltip, scrollbars and dividers. */
+.tooltip {
+    -fx-background-color: -fx-panel;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: -fx-control-border;
+    -fx-border-width: 1;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+    -fx-padding: 6 10;
+    -fx-font-size: 12px;
+}
+
+.scroll-bar {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: -fx-control-border;
+    -fx-background-radius: 3;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: -fx-focus;
+}
+
+.split-pane {
+    -fx-background-color: -fx-bg;
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+
+.split-pane > .split-pane-divider {
+    -fx-padding: 0 2;
+    -fx-background-color: -fx-line;
+}
+
+.split-pane > .split-pane-divider:hover {
+    -fx-background-color: -fx-primary-color;
+}
+
+.separator {
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+}
+
+.separator .line {
+    -fx-border-color: -fx-line;
+    -fx-border-insets: 0;
+}
+
+/* Progress, checks and sliders. */
+.progress-bar > .track {
+    -fx-background-color: -fx-control-bg;
+    -fx-background-radius: 3;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: -fx-primary-color;
+    -fx-background-radius: 3;
+    -fx-background-insets: 0;
+}
+
+.check-box, .radio-button {
+    -fx-text-fill: -fx-text-primary;
+    -fx-padding: 4 0;
+    -fx-font-size: 13px;
+}
+
+.check-box .box, .radio-button .radio {
+    -fx-background-color: -fx-field-bg;
+    -fx-border-color: -fx-control-border;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-padding: 4;
+}
+
+.check-box:selected .mark, .radio-button:selected .dot {
+    -fx-background-color: -fx-primary-color;
+}
+
+.slider .track {
+    -fx-background-color: -fx-control-bg;
+}
+
+.slider .thumb {
+    -fx-background-color: -fx-primary-color;
+}
+
+.titled-pane {
+    -fx-text-fill: -fx-text-primary;
+    -fx-animated: false;
+}
+
+.titled-pane > .title {
+    -fx-background-color: -fx-control-bg;
+    -fx-background-radius: 6 6 0 0;
+    -fx-padding: 12;
+    -fx-font-weight: bold;
+}
+
+.titled-pane > .title > .arrow-button .arrow {
+    -fx-background-color: -fx-text-secondary;
+}
+
+.titled-pane > .content {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-padding: 12;
+}
+
+/* Shell surfaces: topbar, sidebar, toolbars and status bar. */
+.main-view {
+    -fx-background-color: -fx-bg;
+}
+
+.topbar {
+    -fx-background-color: -fx-bg;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-padding: 8 16;
+    -fx-spacing: 8;
+}
+
+.main-sidebar, .server-panel, .main-split-pane .main-sidebar {
+    -fx-background-color: -fx-panel;
+}
+
+.panel-head {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 6 14;
+}
+
+.panel-title {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.brand-name {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 18px;
+}
+
+.brand-tag {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 3 6;
+    -fx-border-color: -fx-line;
+    -fx-background-radius: 2;
+    -fx-border-radius: 2;
+}
+
+.current-host-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+.current-host-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+}
+
+.toolbar, .terminal-toolbar {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 8 12;
+    -fx-spacing: 8;
+}
+
+.status-bar {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 0 14;
+}
+
+.status-bar .status-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+.status-ok {
+    -fx-text-fill: -fx-success-color;
+}
+
+.status-warn {
+    -fx-text-fill: -fx-warning-color;
+}
+
+.status-error {
+    -fx-text-fill: -fx-danger-color;
+}
+
+.status-ai {
+    -fx-text-fill: -fx-ai-color;
+}
+
+.status-info {
+    -fx-text-fill: -fx-info-color;
+}
+
+.server-card {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-background-radius: 3;
+    -fx-text-fill: -fx-text-primary;
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 10 12;
+}
+
+.server-card:hover {
+    -fx-background-color: -fx-control-bg;
+}
+
+.server-card.active {
+    -fx-background-color: -fx-tree-selected-bg;
+    -fx-text-fill: -fx-tree-selected-text;
+    -fx-border-color: transparent transparent transparent -fx-primary-color;
+    -fx-border-width: 0 0 0 2;
+}
+
+.sidebar-section-title {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 8 0;
+}
+
+.sidebar-details {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0 10;
+}
+
+.sidebar-details > .title {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 8 6;
+}
+
+.sidebar-details > .content {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4;
+}
+
+.system-info-label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+.system-info-value {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+}
+
+.stats-bar {
+    -fx-background-color: -fx-panel;
+    -fx-padding: 8 12;
+    -fx-spacing: 16;
+}
+
+.stats-bar .label {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+/* Terminal keeps its own dark canvas and ANSI palette. */
+.terminal-panel, .terminal-tab-pane {
+    -fx-background-color: -fx-bg;
+}
+
 .terminal-output, .terminal-output .content {
-    -fx-background-color: -fx-code-bg;
+    -fx-background-color: -fx-terminal-bg;
+}
+/* TextArea fallback needs its own ink; the terminal's ANSI spans remain independent. */
+.text-area.terminal-output {
+    -fx-text-fill: -fx-terminal-text;
+    -fx-control-inner-background: -fx-terminal-bg;
 }
 
 .terminal-output .text {
-    -fx-fill: -fx-text-primary;
+    -fx-fill: -fx-terminal-text;
 }
 
 .connection-info-label {
@@ -520,87 +838,148 @@
 }
 
 .command-input {
-    -fx-background-color: -fx-panel-bg;
+    -fx-background-color: -fx-panel;
     -fx-text-fill: -fx-text-primary;
 }
 
-/* ---------- SFTP Drawer ---------- */
-.terminal-drawer-container {
-    -fx-background-color: -fx-app-bg;
-}
-
+/* Agent workspace and independent AI assistant stay separate. */
 .agent-workspace-host {
-    -fx-background-color: -fx-app-bg;
-    -fx-border-color: -fx-border-default;
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
     -fx-border-width: 0 0 0 1;
-    -fx-min-width: 280;
 }
 
-.split-pane > .split-pane-divider {
-    -fx-background-color: -fx-border-default;
+.agent-workspace {
+    -fx-background-color: -fx-panel;
 }
 
-.split-pane > .split-pane-divider:hover {
-    -fx-background-color: -fx-primary-color;
+/* Role-based transcript blocks: one outer scroll, no fixed-height message boxes. */
+.agent-message {
+    -fx-padding: 6 8;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0 0 0 2;
 }
-
-.file-drawer-header {
+.agent-message-user {
     -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-line;
+}
+.agent-message-question {
+    -fx-background-color: -fx-warning-bg;
+    -fx-border-color: -fx-warning-line;
+}
+.agent-message-error {
+    -fx-border-color: -fx-danger-color;
+}
+.agent-message-success {
+    -fx-border-color: -fx-success-color;
+}
+.agent-message-status {
+    -fx-padding: 2 8;
+    -fx-border-width: 0;
+}
+.agent-message-think, .agent-message-tool {
+    -fx-border-color: -fx-line;
+}
+.agent-message-role {
     -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.agent-role-user { -fx-text-fill: -fx-ai-color; }
+.agent-role-question { -fx-text-fill: -fx-warning-color; }
+.agent-role-error { -fx-text-fill: -fx-danger-color; }
+.agent-role-success { -fx-text-fill: -fx-success-color; }
+.agent-message-text {
+    -fx-fill: -fx-text-primary;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
+    -fx-font-size: 12.5px;
+}
+.agent-message-code {
+    -fx-fill: -fx-text-primary;
+    -fx-font-family: "Cascadia Code", Consolas, monospace;
     -fx-font-size: 12px;
-    -fx-padding: 6 12;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1 0 0 0;
-    -fx-min-height: 28;
-    -fx-alignment: CENTER_LEFT;
 }
-
-.file-drawer-header:hover {
-    -fx-background-color: -fx-elevated-bg;
+.agent-message-text-status, .agent-message-text-think, .agent-message-text-tool {
+    -fx-fill: -fx-text-secondary;
+}
+.agent-message-option {
     -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 0 0 0 4;
+}
+.agent-copy-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8;
+    -fx-border-color: transparent;
+    -fx-min-height: 24;
+    -fx-min-width: 44;
+    -fx-cursor: hand;
 }
 
-.file-drawer-body {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1 0 0 0;
+.agent-history-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8;
+    -fx-border-color: transparent;
+    -fx-min-height: 24;
+    -fx-min-width: 44;
+    -fx-cursor: hand;
+}
+.agent-history-button:hover {
+    -fx-text-fill: -fx-text-primary;
+    -fx-background-color: -fx-hover-bg;
+}
+.agent-copy-button:hover {
+    -fx-text-fill: -fx-text-primary;
+    -fx-background-color: -fx-hover-bg;
+}
+.agent-message-details {
+    -fx-text-fill: -fx-text-secondary;
 }
 
-/* ---------- AI ---------- */
+.ai-title {
+    -fx-text-fill: -fx-ai-color;
+    -fx-font-size: 13px;
+}
+
 .ai-assistant-panel {
-    -fx-background-color: -fx-panel-bg;
+    -fx-background-color: -fx-panel;
 }
 
 .model-switcher-bar {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
     -fx-border-width: 0 0 1 0;
     -fx-padding: 6 8;
 }
 
 .model-switcher-label {
     -fx-text-fill: -fx-text-secondary;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
 }
 
 .assistant-output, .assistant-output .content {
-    -fx-background-color: -fx-panel-bg;
-    -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    -fx-background-color: -fx-panel;
+    -fx-font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
 }
 
 .assistant-input-area {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
     -fx-border-width: 1 0 0 0;
     -fx-padding: 8;
 }
 
 .ai-command-card {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1;
-    -fx-border-radius: 6;
-    -fx-background-radius: 6;
+    -fx-background-color: -fx-warning-bg;
+    -fx-border-color: transparent transparent transparent -fx-warning-line;
+    -fx-border-width: 0 0 0 2;
+    -fx-border-radius: 0;
+    -fx-background-radius: 0;
     -fx-padding: 8 10;
 }
 
@@ -612,7 +991,7 @@
 
 .ai-command-risk {
     -fx-text-fill: -fx-warning-color;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
 }
 
@@ -623,279 +1002,494 @@
 }
 
 .ai-command-btn {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-text-secondary;
+    -fx-background-color: -fx-control-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
     -fx-font-size: 12px;
     -fx-padding: 4 12;
-    -fx-background-radius: 4;
-    -fx-border-radius: 4;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 1;
+    -fx-min-height: 26;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
 }
 
 .ai-command-btn:hover {
     -fx-background-color: -fx-hover-bg;
-    -fx-text-fill: -fx-text-primary;
 }
 
-.ai-command-btn-danger {
-    -fx-background-color: transparent;
-    -fx-text-fill: -fx-danger-color;
-    -fx-font-size: 12px;
-    -fx-padding: 4 12;
-    -fx-background-radius: 4;
-    -fx-border-radius: 4;
-    -fx-border-color: -fx-danger-color;
-    -fx-border-width: 1;
+/* File navigation and transfer surfaces. */
+.connection-list-panel, .monitor-panel, .welcome-page, .file-manager-area,
+.bookmark-panel, .settings-dialog-container, .form-dialog {
+    -fx-background-color: -fx-bg;
 }
 
-.connection-list-panel, .monitor-panel, .welcome-page, .file-manager-area {
-    -fx-background-color: -fx-panel-bg;
+.file-pane {
+    -fx-background-color: -fx-panel;
+    -fx-padding: 12;
 }
 
-.storage-table {
-    -fx-background-color: -fx-sidebar-bg;
-    -fx-border-color: transparent;
-}
-
-/* Unified UI: shared by both palettes via light-theme.css. */
-.root {
-    -fx-base: -fx-panel-bg;
-    -fx-background: -fx-app-bg;
-    -fx-control-inner-background: -fx-panel-bg;
-    -fx-control-inner-background-alt: -fx-panel-bg;
-    -fx-accent: -fx-primary-color;
-    -fx-focus-color: -fx-primary-color;
-    -fx-faint-focus-color: transparent;
-    -fx-text-base-color: -fx-text-primary;
-    -fx-text-background-color: -fx-text-primary;
-    -fx-selection-bar: -fx-elevated-bg;
-    -fx-selection-bar-non-focused: -fx-elevated-bg;
-    -fx-selection-bar-text: -fx-text-primary;
-    -fx-mark-color: -fx-text-secondary;
-    -fx-font-family: "Microsoft YaHei UI", "Segoe UI";
-    -fx-font-size: 13px;
-}
-
-/* Consistent control sizing, focus and semantic actions. */
-.button, .toggle-button, .menu-button, .primary-button, .secondary-button,
-.toolbar-button, .nav-item, .danger-button, .button-success, .refresh-button,
-.upload-download-button, .connect-button, .command-button {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-text-fill: -fx-text-primary;
-    -fx-background-radius: 6;
-    -fx-border-radius: 6;
-    -fx-border-color: -fx-border-default;
-    -fx-padding: 7 12;
-    -fx-min-height: 32;
-    -fx-font-family: "Microsoft YaHei UI", "Segoe UI";
-    -fx-font-size: 13px;
-    -fx-cursor: hand;
-}
-.button:hover, .toggle-button:hover, .menu-button:hover {
-    -fx-background-color: -fx-hover-bg;
-    -fx-text-fill: -fx-text-primary;
-}
-.button:focused, .toggle-button:focused, .menu-button:focused {
-    -fx-border-color: -fx-primary-color;
-}
-.primary-button, .connect-button, .command-button, .button-success,
-.button:default {
-    -fx-background-color: -fx-primary-color;
-    -fx-text-fill: -fx-text-inverse;
-    -fx-border-color: transparent;
-    -fx-font-weight: bold;
-}
-.primary-button:hover, .connect-button:hover, .command-button:hover,
-.button-success:hover, .button:default:hover { -fx-background-color: -fx-primary-hover; }
-.danger-button, .ai-command-btn-danger { -fx-text-fill: -fx-danger-color; }
-.danger-button:hover { -fx-border-color: -fx-danger-color; }
-.nav-item, .nav-button, .status-item, .ai-command-btn {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
+.file-drawer-header {
+    -fx-background-color: -fx-panel;
     -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 4 10;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 28;
 }
-.nav-item:hover, .nav-item.active, .nav-button:selected {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-text-fill: -fx-primary-color;
-}
-.text-field, .password-field, .text-area, .combo-box, .choice-box, .spinner {
-    -fx-background-color: -fx-code-bg;
-    -fx-text-fill: -fx-text-primary;
-    -fx-prompt-text-fill: -fx-text-disabled;
-    -fx-highlight-fill: -fx-primary-color;
-    -fx-highlight-text-fill: -fx-text-inverse;
-    -fx-border-color: -fx-border-default;
-    -fx-border-radius: 6;
-    -fx-background-radius: 6;
-    -fx-min-height: 34;
-}
-.text-field, .password-field { -fx-padding: 7 10; }
-.text-area .content { -fx-background-color: -fx-code-bg; -fx-background-radius: 6; }
-.text-field:focused, .text-area:focused, .combo-box:focused, .spinner:focused {
-    -fx-border-color: -fx-primary-color;
-}
-.combo-box .list-cell { -fx-background-color: transparent; -fx-padding: 4 8; }
-.combo-box-popup .list-view { -fx-background-color: -fx-panel-bg; }
-.combo-box-popup .list-cell:hover { -fx-background-color: -fx-hover-bg; }
-.check-box, .radio-button { -fx-text-fill: -fx-text-primary; -fx-padding: 4 0; }
-.check-box .box, .radio-button .radio {
-    -fx-background-color: -fx-code-bg;
-    -fx-border-color: -fx-border-strong;
-    -fx-border-radius: 4;
-    -fx-background-radius: 4;
-    -fx-padding: 4;
-}
-.check-box:selected .mark, .radio-button:selected .dot { -fx-background-color: -fx-primary-color; }
-.hyperlink { -fx-text-fill: -fx-primary-color; }
-.tooltip { -fx-background-color: -fx-elevated-bg; -fx-text-fill: -fx-text-primary; -fx-padding: 8 12; }
 
-/* Page hierarchy and shared content containers. */
-.connection-list-panel, .monitor-panel, .bookmark-panel,
-.settings-dialog-container, .form-dialog {
-    -fx-background-color: -fx-app-bg;
-    -fx-spacing: 16;
-    -fx-padding: 20;
+.file-drawer-header:hover {
+    -fx-background-color: -fx-control-bg;
+    -fx-text-fill: -fx-text-primary;
 }
-.page-heading { -fx-padding: 0 0 4 0; }
-.page-title, .monitor-title { -fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
+
+.file-drawer-body {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 1 0 0 0;
+}
+
+.transfer-progress-bar {
+    -fx-pref-width: 180;
+    -fx-min-height: 12;
+    -fx-pref-height: 12;
+}
+
+.transfer-progress-bar > .track {
+    -fx-background-color: -fx-control-bg;
+    -fx-background-radius: 3;
+    -fx-background-insets: 0;
+}
+
+.transfer-progress-bar > .bar {
+    -fx-background-color: -fx-primary-color;
+    -fx-background-radius: 3;
+}
+
+.file-pane.drop-target {
+    -fx-background-color: rgba(66, 107, 148, 0.12);
+    -fx-border-color: -fx-primary-color;
+    -fx-border-width: 2;
+    -fx-border-radius: 3;
+}
+
+.file-toolbar .button {
+    -fx-padding: 5 8;
+    -fx-min-height: 26;
+    -fx-font-size: 12px;
+}
+
+/* Pages, dialogs, cards and charts. */
+.page-title, .monitor-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-primary;
+}
+
 .page-description, .text-secondary, .search-label, .stat-label, .tip-text {
     -fx-text-fill: -fx-text-secondary;
     -fx-font-size: 12px;
 }
-.section-title, .chart-title, .action-title { -fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
-.text-info { -fx-text-fill: -fx-primary-color; }
-.text-success { -fx-text-fill: -fx-success-color; }
-.text-danger, .text-error { -fx-text-fill: -fx-danger-color; }
-.toolbar, .terminal-toolbar {
-    -fx-background-color: -fx-panel-bg;
-    -fx-padding: 10 12;
-    -fx-spacing: 8;
-    -fx-border-color: -fx-border-default;
-    -fx-border-width: 0 0 1 0;
-}
-.connection-list-panel .toolbar { -fx-background-radius: 8; -fx-border-radius: 8; -fx-border-width: 1; }
-.stats-bar { -fx-padding: 8 12; -fx-spacing: 16; -fx-background-color: -fx-panel-bg; }
-.stats-bar .label { -fx-font-size: 11px; -fx-text-fill: -fx-text-secondary; }
-.scroll-pane, .scroll-pane > .viewport { -fx-background-color: transparent; }
-.scroll-pane { -fx-padding: 0; -fx-border-color: transparent; }
-.split-pane { -fx-padding: 0; -fx-background-insets: 0; }
-.split-pane > .split-pane-divider { -fx-padding: 0 2; -fx-background-color: -fx-border-default; }
-.separator { -fx-padding: 0; -fx-background-color: transparent; }
-.separator .line { -fx-border-color: -fx-border-default; -fx-border-insets: 0; }
 
-/* Readable, quiet tables across connection, file and history views. */
-.table-view, .tree-view, .list-view {
-    -fx-background-color: -fx-panel-bg;
-    -fx-border-color: -fx-border-default;
-    -fx-border-radius: 6;
-    -fx-background-radius: 6;
-    -fx-padding: 1;
+.section-title, .chart-title, .action-title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-primary;
 }
-.table-view .column-header, .table-view .filler {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-border-color: transparent transparent -fx-border-default transparent;
-    -fx-size: 38;
+
+.text-info {
+    -fx-text-fill: -fx-info-color;
 }
-.table-view .column-header .label { -fx-alignment: CENTER_LEFT; -fx-padding: 0 10; -fx-font-weight: normal; }
-.table-cell { -fx-text-fill: -fx-text-primary; -fx-padding: 10; -fx-alignment: CENTER_LEFT; -fx-border-color: transparent; }
-.table-row-cell { -fx-cell-size: 40; -fx-background-color: -fx-panel-bg; }
-.table-row-cell:filled:hover, .list-cell:filled:hover, .tree-cell:filled:hover { -fx-background-color: -fx-hover-bg; }
-.table-row-cell:filled:selected, .list-cell:filled:selected, .tree-cell:filled:selected { -fx-background-color: -fx-elevated-bg; }
-.table-row-cell:selected .table-cell { -fx-text-fill: -fx-primary-color; }
-.table-view .placeholder .label { -fx-text-fill: -fx-text-secondary; -fx-padding: 24; }
-.list-cell, .tree-cell { -fx-background-color: -fx-panel-bg; -fx-text-fill: -fx-text-primary; -fx-padding: 10 12; }
-.table-row-cell:empty, .list-cell:empty { -fx-background-color: -fx-panel-bg; }
 
-/* Shell and sidebar keep the workspace compact. */
-.topbar { -fx-padding: 8 16; -fx-spacing: 8; }
-.brand-name { -fx-font-size: 18px; }
-.brand-tag { -fx-padding: 3 6; -fx-font-size: 10px; -fx-text-fill: -fx-text-secondary; }
-.top-nav .nav-item { -fx-padding: 7 12; -fx-font-size: 13px; }
-.panel-head { -fx-min-height: 44; -fx-padding: 6 14; }
-.panel-title { -fx-font-size: 12px; -fx-font-weight: bold; }
-.main-sidebar { -fx-padding: 0; }
-.server-card { -fx-padding: 10 12; -fx-background-radius: 6; -fx-text-fill: -fx-text-primary; -fx-alignment: CENTER_LEFT; }
-.system-info-panel { -fx-padding: 16; }
-.sidebar-section-title { -fx-padding: 0 0 8 0; -fx-font-size: 11px; -fx-text-fill: -fx-text-secondary; }
-.system-info-label { -fx-min-width: 64; -fx-padding: 0; -fx-text-fill: -fx-text-secondary; }
-.system-info-value { -fx-padding: 0; -fx-text-fill: -fx-text-primary; -fx-font-family: "Consolas"; }
-.sidebar-details { -fx-padding: 0 10; }
-.sidebar-details-content { -fx-padding: 12 0; }
-.storage-table .table-cell { -fx-padding: 6; -fx-font-size: 11px; }
-.status-bar { -fx-padding: 0 14; }
-.status-bar .status-item { -fx-min-height: 26; -fx-padding: 3 8; }
-.terminal-toolbar { -fx-padding: 8 12; }
-.tab-pane > .tab-header-area > .tab-header-background { -fx-background-color: -fx-panel-bg; }
-.tab { -fx-padding: 8 12; -fx-background-radius: 0; }
-.tab:selected { -fx-border-width: 0 0 2 0; -fx-border-color: transparent transparent -fx-primary-color transparent; }
-.terminal-tab-pane .tab:selected { -fx-background-color: -fx-elevated-bg; }
-.file-pane { -fx-padding: 12; -fx-background-color: -fx-panel-bg; }
-.file-manager-area .table-cell { -fx-padding: 7 8; }
-.file-manager-area .table-row-cell { -fx-cell-size: 32; }
-.file-manager-area .column-header { -fx-size: 32; }
-.file-toolbar .button { -fx-padding: 5 8; -fx-min-height: 28; -fx-font-size: 12px; }
-/* 文件管理器底部传输进度条 */
-.transfer-progress-bar { -fx-pref-width: 180; -fx-min-height: 12; -fx-pref-height: 12; }
-.transfer-progress-bar > .track { -fx-background-color: -fx-hover-bg; -fx-background-radius: 6; -fx-background-insets: 0; }
-.transfer-progress-bar > .bar { -fx-background-color: -fx-primary-color; -fx-background-radius: 6; }
-
-/* 拖拽上传悬停在远程面板上的高亮提示 */
-.file-pane.drop-target {
-    -fx-background-color: rgba(88, 166, 255, 0.12);
-    -fx-border-color: -fx-primary-color;
-    -fx-border-width: 2;
-    -fx-border-radius: 8;
+.text-success {
+    -fx-text-fill: -fx-success-color;
 }
-.agent-workspace { -fx-background-color: -fx-code-bg; }
 
-/* Forms, settings and modal dialogs use the same controls. */
-.dialog-pane { -fx-background-color: -fx-app-bg; -fx-padding: 20; }
-.dialog-pane > .header-panel { -fx-background-color: -fx-app-bg; -fx-padding: 0 0 16 0; }
-.dialog-pane > .header-panel .label { -fx-font-size: 18px; -fx-font-weight: bold; }
-.dialog-pane > .content { -fx-padding: 12 0; }
-.dialog-pane > .button-bar { -fx-padding: 16 0 0 0; }
-.settings-dialog-container { -fx-padding: 20; -fx-spacing: 16; }
-.settings-page { -fx-padding: 0 16 16 16; -fx-spacing: 16; }
-.settings-tree { -fx-border-color: transparent; -fx-background-color: -fx-panel-bg; }
-.settings-tree .tree-cell { -fx-padding: 12; }
-.settings-dialog-buttons { -fx-border-color: -fx-border-default; -fx-border-width: 1 0 0 0; -fx-padding: 16 0 0 0; }
-.titled-pane { -fx-text-fill: -fx-text-primary; -fx-animated: false; }
-.titled-pane > .title {
-    -fx-background-color: -fx-elevated-bg;
-    -fx-background-radius: 6 6 0 0;
-    -fx-padding: 12;
+.text-danger, .text-error {
+    -fx-text-fill: -fx-danger-color;
+}
+
+.hyperlink {
+    -fx-text-fill: -fx-primary-color;
+}
+
+.dialog-pane {
+    -fx-background-color: -fx-bg;
+    -fx-padding: 20;
+}
+
+.dialog-pane > .header-panel {
+    -fx-background-color: -fx-bg;
+    -fx-padding: 0 0 16 0;
+}
+
+.dialog-pane > .header-panel .label {
+    -fx-font-size: 18px;
     -fx-font-weight: bold;
 }
-.titled-pane > .title > .arrow-button .arrow { -fx-background-color: -fx-text-secondary; }
-.titled-pane > .content { -fx-background-color: -fx-panel-bg; -fx-border-color: -fx-border-default; -fx-padding: 12; }
-.sidebar-details > .title { -fx-background-color: transparent; -fx-padding: 8 6; }
-.sidebar-details > .content { -fx-border-color: transparent; -fx-padding: 4; }
-.progress-bar > .track { -fx-background-color: -fx-elevated-bg; -fx-background-radius: 4; }
-.progress-bar > .bar { -fx-background-color: -fx-primary-color; -fx-background-radius: 4; -fx-background-insets: 0; -fx-padding: 5; }
-.slider .track { -fx-background-color: -fx-border-default; }
-.slider .thumb { -fx-background-color: -fx-primary-color; }
-.monitor-section-title { -fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: -fx-text-secondary; }
-.monitor-value { -fx-font-size: 14px; -fx-text-fill: -fx-text-primary; }
-.monitor-item { -fx-alignment: CENTER_LEFT; -fx-padding: 0 0 8 0; }
-.monitor-panel .progress-bar { -fx-max-width: infinity; }
-.chart { -fx-padding: 12; -fx-background-color: -fx-panel-bg; }
-.chart-plot-background { -fx-background-color: -fx-code-bg; }
-.chart-legend { -fx-background-color: transparent; }
-.chart-title { -fx-text-fill: -fx-text-primary; }
-.axis { -fx-tick-label-fill: -fx-text-secondary; }
-.chart-horizontal-grid-lines, .chart-vertical-grid-lines { -fx-stroke: -fx-border-default; }
-.default-color0.chart-series-line { -fx-stroke: -fx-primary-color; }
-.default-color1.chart-series-line { -fx-stroke: -fx-ai-color; }
-.welcome-page { -fx-background-color: -fx-app-bg; }
-.welcome-title { -fx-font-size: 36px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
-.welcome-subtitle { -fx-font-size: 16px; -fx-text-fill: -fx-text-secondary; }
-.action-card { -fx-padding: 28; -fx-background-color: -fx-panel-bg; -fx-border-color: -fx-border-default; -fx-background-radius: 10; -fx-border-radius: 10; }
-.metric-card { -fx-padding: 20; -fx-background-color: -fx-panel-bg; -fx-border-color: -fx-border-default; -fx-background-radius: 8; -fx-border-radius: 8; }
-.metric-value { -fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: -fx-text-primary; }
-.advanced-charts-panel, .history-dialog-container { -fx-background-color: -fx-app-bg; -fx-padding: 20; -fx-spacing: 16; }
-.command-input > .command-button { -fx-min-width: 56; }
-.command-input > .choice-box { -fx-min-width: 100; }
-.command-input > .text-field { -fx-min-width: 80; }
-.command-input > .label { -fx-min-width: 34; }
-.menu-bar .menu-button { -fx-background-color: transparent; -fx-border-color: transparent; -fx-min-height: 26; -fx-padding: 4 10; }
+
+.dialog-pane > .content {
+    -fx-padding: 12 0;
+}
+
+.dialog-pane > .button-bar {
+    -fx-padding: 16 0 0 0;
+}
+
+.settings-dialog-container {
+    -fx-padding: 20;
+    -fx-spacing: 16;
+}
+
+.settings-page {
+    -fx-padding: 0 16 16 16;
+    -fx-spacing: 16;
+}
+
+.settings-tree {
+    -fx-border-color: transparent;
+    -fx-background-color: -fx-panel;
+}
+
+.settings-tree .tree-cell {
+    -fx-padding: 12;
+}
+
+.settings-dialog-buttons {
+    -fx-border-color: -fx-line;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 16 0 0 0;
+}
+
+.chart {
+    -fx-padding: 12;
+    -fx-background-color: -fx-panel;
+}
+
+.chart-plot-background {
+    -fx-background-color: -fx-field-bg;
+}
+
+.chart-legend {
+    -fx-background-color: transparent;
+}
+
+.chart-title {
+    -fx-text-fill: -fx-text-primary;
+}
+
+.axis {
+    -fx-tick-label-fill: -fx-text-secondary;
+}
+
+.chart-horizontal-grid-lines, .chart-vertical-grid-lines {
+    -fx-stroke: -fx-line;
+}
+
+.default-color0.chart-series-line {
+    -fx-stroke: -fx-primary-color;
+}
+
+.default-color1.chart-series-line {
+    -fx-stroke: -fx-ai-color;
+}
+
+.welcome-page {
+    -fx-background-color: -fx-bg;
+}
+
+.welcome-title {
+    -fx-font-size: 36px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.welcome-subtitle {
+    -fx-font-size: 16px;
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.action-card, .metric-card {
+    -fx-padding: 20;
+    -fx-background-color: -fx-panel;
+    -fx-border-color: -fx-line;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+}
+
+.metric-value {
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.monitor-section-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-text-secondary;
+}
+
+.monitor-value {
+    -fx-font-size: 14px;
+    -fx-text-fill: -fx-text-primary;
+}
+
+.monitor-item {
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 0 0 8 0;
+}
+
+.storage-table .table-cell {
+    -fx-padding: 6;
+    -fx-font-size: 12px;
+}
+
+.advanced-charts-panel, .history-dialog-container {
+    -fx-background-color: -fx-bg;
+    -fx-padding: 20;
+    -fx-spacing: 16;
+}
+
+.command-input > .command-button {
+    -fx-min-width: 56;
+}
+
+.command-input > .choice-box {
+    -fx-min-width: 100;
+}
+
+.command-input > .text-field {
+    -fx-min-width: 80;
+}
+
+.command-input > .label {
+    -fx-min-width: 34;
+}
+
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane {
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+
+/* ============================================================
+   v6 阶段 2 — 会话树、活动会话卡、命令面板、Agent overlay
+   复用语义 token，不引入新颜色；普通表面无边框，输入保留边界。
+   ============================================================ */
+
+/* 侧栏会话树 */
+.sidebar-filter {
+    -fx-background-color: -fx-field-bg;
+    -fx-control-inner-background: -fx-field-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-prompt-text-fill: -fx-text-secondary;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-padding: 6 10;
+    -fx-min-height: 28;
+}
+
+.sidebar-filter:focused {
+    -fx-border-color: -fx-focus;
+}
+
+.server-tree {
+    -fx-background-color: -fx-panel;
+    -fx-border-color: transparent;
+    -fx-padding: 2;
+}
+
+.server-tree .tree-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+    -fx-padding: 4 6;
+}
+
+.server-tree .tree-cell:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+/* 单击只选中：中性底，与活动标签的主色选中区分 */
+.server-tree .tree-cell:selected {
+    -fx-background-color: -fx-tree-selected-bg;
+    -fx-text-fill: -fx-tree-selected-text;
+}
+
+.server-node {
+    -fx-padding: 2 0;
+}
+
+.server-node-name {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+}
+
+.server-node-sub {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+.sidebar-hint {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+    -fx-padding: 4 10;
+}
+
+/* 活动会话卡：指标属于活动 tab，不属于树选择 */
+.active-session-panel {
+    -fx-background-color: -fx-panel;
+    -fx-padding: 8 10;
+}
+
+/* 独立滚动视口与侧栏背景融合，不引入额外白底或横向溢出 */
+.sidebar-scroll,
+.sidebar-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+.sidebar-scroll {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.active-session-name {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+}
+
+/* Agent overlay 模式：浮在终端之上，略微抬高边缘 */
+.agent-workspace-host {
+    -fx-background-color: -fx-panel;
+}
+
+.terminal-stack {
+    -fx-background-color: -fx-bg;
+}
+
+/* 命令面板：field 背景与 border 边界（状态页规范） */
+.command-palette {
+    -fx-background-color: -fx-field-bg;
+    -fx-border-color: -fx-control-border;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.16), 8, 0, 0, 2);
+}
+
+.command-palette-field {
+    -fx-background-color: -fx-field-bg;
+    -fx-control-inner-background: -fx-field-bg;
+    -fx-text-fill: -fx-text-primary;
+    -fx-prompt-text-fill: -fx-text-secondary;
+    -fx-border-color: -fx-control-border;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+}
+
+.command-palette-field:focused {
+    -fx-border-color: -fx-focus;
+}
+
+.command-palette-list {
+    -fx-background-color: -fx-field-bg;
+    -fx-border-color: transparent;
+    -fx-min-height: 120;
+    -fx-max-height: 300;
+}
+
+.command-palette-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-primary;
+    -fx-border-color: transparent;
+    -fx-padding: 6 8;
+}
+
+.command-palette-list .list-cell:hover {
+    -fx-background-color: -fx-hover-bg;
+}
+
+.command-palette-list .list-cell:selected {
+    -fx-background-color: -fx-selected-bg;
+}
+
+.command-palette-item-title {
+    -fx-text-fill: -fx-text-primary;
+    -fx-font-size: 12px;
+}
+
+.command-palette-item-group {
+    -fx-text-fill: -fx-text-secondary;
+    -fx-font-size: 12px;
+}
+
+/* 底栏审批定位：有待审批时才显示 */
+.status-approval-locator {
+    -fx-text-fill: -fx-warning-color;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+}
+
+/* Scoped child labels must follow selection instead of keeping the resting text color. */
+.command-palette-list .list-cell:selected .command-palette-item-title {
+    -fx-text-fill: -fx-selected-text;
+}
+.command-palette-list .list-cell:selected .command-palette-item-group {
+    -fx-text-fill: -fx-selected-muted;
+}
+.server-tree .tree-cell:selected .server-node-name {
+    -fx-text-fill: -fx-tree-selected-text;
+}
+.server-tree .tree-cell:selected .server-node-sub {
+    -fx-text-fill: -fx-text-secondary;
+}
+/* Warning actions are identifiable without framing every ordinary operation. */
+.warning-button {
+    -fx-background-color: -fx-warning-bg;
+    -fx-text-fill: -fx-warning-color;
+    -fx-border-color: -fx-warning-line;
+    -fx-border-width: 1;
+}
+.warning-button:hover {
+    -fx-background-color: -fx-warning-bg;
+    -fx-border-color: -fx-warning-color;
+}
+.warning-button:focused {
+    -fx-border-color: -fx-focus;
+}
+.warning-button:disabled {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -fx-text-disabled;
+}
+
+/* Selected/active controls keep a visible keyboard focus despite scoped navigation rules. */
+.topbar .nav-item:focused, .topbar .nav-item.active:focused,
+.top-nav .nav-item.active:focused, .toggle-button:selected:focused,
+.menu-button:showing:focused {
+    -fx-border-color: -fx-focus;
+    -fx-border-width: 1;
+}
+
+/* Phase 2: distinguish the nonmodal Agent overlay from the file workspace. */
+.agent-overlay { -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.20), 10, 0, -3, 0); }
+
+/* Phase 3 compact browser. */
+.file-manager-area .table-row-cell { -fx-cell-size: 28; }
+.file-manager-area .table-cell { -fx-padding: 4 8; }
+.directory-tree .tree-cell { -fx-padding: 4 6; }
+
+/* Compact file drawer: navigation supports the table instead of competing with it. */
+.file-manager-area .file-pane { -fx-padding: 4 6; }
+.file-manager-area .stats-bar { -fx-padding: 2 6; }
+.file-manager-area .file-toolbar .button { -fx-padding: 3 6; -fx-min-height: 24; }
+.file-manager-area .path-bar .button, .file-manager-area .path-bar .text-field { -fx-padding: 3 6; -fx-min-height: 24; -fx-pref-height: 26; }
+.file-manager-area .tab-header-area { -fx-padding: 1 4 0 4; }
+.file-manager-area .tab { -fx-padding: 3 7; }
+.file-manager-area .column-header { -fx-size: 26; }
+.file-manager-area .table-row-cell { -fx-cell-size: 24; }
+.file-manager-area .table-cell { -fx-padding: 2 6; }
+.file-manager-area .directory-tree .tree-cell { -fx-padding: 2 4; -fx-cell-size: 24; }

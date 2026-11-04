@@ -648,7 +648,7 @@ public class SSHConnectionManager implements AutoCloseable {
      */
     public String executeCommand(String command) throws AIShellException {
         // 命令原文可能含凭据（-pSecret、-u user:pass 等），降级为 DEBUG 避免密码进日志
-        log.debug("Executing command");
+//        log.debug("Executing command");
         if (!isConnected()) {
             throw new AIShellException("SSH_CONNECTION_NOT_ESTABLISHED", "SSH connection is not established");
         }
@@ -703,7 +703,7 @@ public class SSHConnectionManager implements AutoCloseable {
             if (!err.isBlank()) {
                 result = (result.isBlank() ? "" : result + "\n") + err.trim();
             }
-            log.debug("Command result length: {}", result.length());
+//            log.debug("Command result length: {}", result.length());
             return result;
         } catch (Exception e) {
             // 命令可能内嵌凭据，错误日志不记录命令原文（2026-10-23 审计 P0-5）

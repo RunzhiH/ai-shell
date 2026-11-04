@@ -54,6 +54,12 @@ public interface TerminalCommandService {
     /** 取消指定终端当前正在处理的 AI 请求。 */
     void cancelAIRequest(Tab tab);
 
+    /** 该终端是否存在可重试的失败 Agent 步骤（错误卡片“重试上一步”判断用）。 */
+    boolean hasFailedAgentStep(Tab tab);
+
+    /** 重试该终端上一步失败的 Agent 任务：沿用原目标与已积累的上下文重新请求模型。 */
+    void retryFailedAgentStep(Tab tab);
+
     /**
      * 在 Tab 中执行命令
      * @param tab 终端标签页

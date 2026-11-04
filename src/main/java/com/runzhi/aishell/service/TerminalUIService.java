@@ -16,6 +16,15 @@ import org.fxmisc.richtext.InlineCssTextArea;
 public interface TerminalUIService {
 
     /**
+     * 设置统一的标签关闭策略：返回值表示是否真正移除该标签。
+     * 供终端面板把 Ctrl+W、上下文菜单等关闭路径接入审批守卫。
+     *
+     * @param closer 关闭策略
+     */
+    default void setTabCloser(java.util.function.Function<javafx.scene.control.Tab, Boolean> closer) {
+    }
+
+    /**
      * 设置 Tab 快捷键
      * @param tab 终端标签页
      * @param input 输入框

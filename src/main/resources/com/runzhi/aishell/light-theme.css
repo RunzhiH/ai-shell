@@ -2,38 +2,59 @@
 @import "style.css";
 
 .root {
-    -fx-app-bg:           #F4F6F8;
-    -fx-panel-bg:         #FFFFFF;
-    -fx-elevated-bg:      #EEF1F5;
-    -fx-hover-bg:         #E4E9EF;
-    -fx-sidebar-bg:       #FFFFFF;
+    /* v6 semantic palette — light */
+    -fx-bg:                 #F0F0F0;
+    -fx-panel:              #FAFAFA;
+    -fx-control-bg:         #E8E8E8;
+    -fx-field-bg:           #FFFFFF;
+    -fx-inset-bg:           #EEEEEE;
+    -fx-line:               #D4D4D4;
+    -fx-control-border:     #858585;
+    -fx-text-primary:       #292929;
+    -fx-text-secondary:     #5F5F5F;
+    -fx-text-disabled:      #727272;
+    -fx-text-inverse:       #FFFFFF;
+    -fx-primary-color:      #426B94;
+    -fx-primary-hover:      #355877;
+    -fx-primary-edge:       #426B94;
+    -fx-focus:              #426B94;
+    -fx-focus-inverse:      #FFFFFF;
+    -fx-selected-bg:        #DCE7F1;
+    -fx-selected-text:      #315B80;
+    -fx-selected-muted:     #315B80;
+    -fx-tree-selected-bg:   #EBEBEB;
+    -fx-tree-selected-text: #292929;
+    -fx-hover-bg:           #E0E0E0;
+    -fx-pressed-bg:         #D8D8D8;
+    -fx-success-color:      #3F6B47;
+    -fx-warning-color:      #755719;
+    -fx-warning-bg:         #FFFBF2;
+    -fx-warning-line:       #9A7938;
+    -fx-danger-color:       #A73535;
+    -fx-terminal-bg:        #1E1E1E;
+    -fx-terminal-text:      #D4D4D4;
+    -fx-ansi-green:         #91B783;
+    -fx-ansi-red:           #D18383;
+    -fx-ai-color:           -fx-text-secondary;
+    -fx-info-color:         #426B94;
+    -fx-white:              #FFFFFF;
 
-    -fx-border-default:   #D5DCE3;
-    -fx-border-strong:    #B8C2CC;
-
-    -fx-text-primary:     #1F2328;
-    -fx-text-secondary:   #5B6673;
-    -fx-text-disabled:    #8B95A3;
-    -fx-text-inverse:     #FFFFFF;
-
-    -fx-primary-color:    #0969DA;
-    -fx-primary-hover:    #218BFF;
-    -fx-ai-color:         #8250DF;
-    -fx-success-color:    #1A7F37;
-    -fx-warning-color:    #9A6700;
-    -fx-danger-color:     #CF222E;
-    -fx-info-color:       #0969DA;
-
-    -fx-accent-color:     #0969DA;
-    -fx-secondary-color:  #218BFF;
-    -fx-content-bg:       #FFFFFF;
-    -fx-light-bg:         #EEF1F5;
-    -fx-dark-bg:          #F4F6F8;
-    -fx-border-color:     #D5DCE3;
-    -fx-hover-color:      #E4E9EF;
-    -fx-selected-color:   #0969DA;
-
-    -fx-radius-sm: 4px;
-    -fx-radius-md: 6px;
-    -fx-code-bg: #F6F8FA;
+    /* Backward-compatible aliases used by existing views. */
+    -fx-app-bg:             #F0F0F0;
+    -fx-panel-bg:           #FAFAFA;
+    -fx-elevated-bg:        #E8E8E8;
+    -fx-sidebar-bg:         #FAFAFA;
+    -fx-border-default:     #D4D4D4;
+    -fx-border-strong:      #858585;
+    -fx-accent-color:       #426B94;
+    -fx-secondary-color:    #315B80;
+    -fx-content-bg:         #FAFAFA;
+    -fx-light-bg:           #E8E8E8;
+    -fx-dark-bg:            #F0F0F0;
+    -fx-border-color:       #D4D4D4;
+    -fx-hover-color:        #E0E0E0;
+    -fx-selected-color:     #DCE7F1;
+    -fx-code-bg:            #FFFFFF;
+    -fx-radius-sm: 3px;
+    -fx-radius-md: 3px;
 }

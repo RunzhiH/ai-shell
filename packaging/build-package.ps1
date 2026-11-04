@@ -1,8 +1,8 @@
-# AIShell 打包脚本
+﻿# AIShell 打包脚本
 # 用法: 在项目根目录执行 powershell -ExecutionPolicy Bypass -File packaging/build-package.ps1
 # 产物: target/dist/AIShell -> 可双击运行的程序目录 (AIShell.exe)
-#       target/dist/AIShell-1.0.0.msi -> Windows 安装包 (开始菜单 + 可选桌面快捷方式)
-#       target/dist/AIShell-1.0.0-portable.zip -> 便携压缩包
+#       target/dist/AIShell-<version>.msi -> Windows 安装包 (开始菜单 + 可选桌面快捷方式)
+#       target/dist/AIShell-<version>-portable.zip -> 便携压缩包
 #
 # 环境要求: JDK 21（设置 JAVA_HOME，或让 java 出现在 PATH 里）。Maven 用项目自带的
 # mvnw 包装器，不需要本机另装。
@@ -11,13 +11,15 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$AppVer = '1.0.0'
+# 版本号与 pom.xml 保持一致，发版时只改一处
+$AppVer = ([xml](Get-Content (Join-Path $root 'pom.xml'))).project.version
 $ImageName = 'AIShell'
 $JarName = "$ImageName-$AppVer.jar"
 
 # 1. 定位 JDK（jpackage / jlink 都是 JDK 自带的）
 $JdkHome = $env:JAVA_HOME
-if (-not $JdkHome) {
+# JAVA_HOME 可能指向没有 jlink 的旧 JDK（如 1.8），此时回退到 PATH 里的 JDK
+if (-not $JdkHome -or -not (Test-Path (Join-Path $JdkHome 'bin\jlink.exe'))) {
     $javaExe = (Get-Command java -ErrorAction SilentlyContinue).Source
     if ($javaExe) { $JdkHome = Split-Path -Parent (Split-Path -Parent $javaExe) }
 }

@@ -35,6 +35,8 @@ module com.runzhi.aishell {
 
     opens com.runzhi.aishell to javafx.fxml, org.fxmisc.richtext;
     opens com.runzhi.aishell.ai to com.google.gson, org.fxmisc.richtext;
+    // Agent 会话历史的 Gson 持久化
+    opens com.runzhi.aishell.agent to com.google.gson;
     // SSH 相关包需要对 JSch (未命名模块) 开放
     opens com.runzhi.aishell.ssh;
     opens com.runzhi.aishell.ssh.impl;

@@ -20,6 +20,7 @@ public class SettingsAIController {
     
     // AI 模型配置
     @FXML private ComboBox<String> configProfileCombo;
+    @FXML private Label defaultConfigLabel;
     @FXML private ComboBox<String> modelCombo;
     @FXML private ComboBox<String> providerCombo;
     @FXML private PasswordField apiKeyField;
@@ -56,9 +57,14 @@ public class SettingsAIController {
     public void initialize() {
         log.info("初始化 AI 设置页面");
         
+        // Expose every already-supported adapter type before restoring a saved profile.
+        for (String provider : java.util.List.of("Gemini", "Ollama", "DeepSeek", "Moonshot", "Mistral", "MiniMax", "Xiaomimimo")) {
+            if (!providerCombo.getItems().contains(provider)) providerCombo.getItems().add(provider);
+        }
         // 加载保存的设置
         loadSettings();
         loadSavedProfiles();
+        refreshDefaultConfigLabel();
         
         // 监听温度滑块变化
         temperatureSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
@@ -79,6 +85,14 @@ public class SettingsAIController {
         } else {
             configProfileCombo.setValue("用户设置");
         }
+        refreshDefaultConfigLabel();
+    }
+
+    /** 设置页只展示已持久化的默认选择；保存配置或切换模型后刷新。 */
+    private void refreshDefaultConfigLabel() {
+        if (defaultConfigLabel == null) return;
+        String name = com.runzhi.aishell.ai.AIConfigManager.getInstance().getDefaultConfigName();
+        defaultConfigLabel.setText(name == null || name.isBlank() ? "未设置" : name);
     }
 
     private void loadSavedProfile(String name) {
@@ -163,7 +177,8 @@ public class SettingsAIController {
         runtimeConfig.setMaxTokens(maxTokensSpinner.getValue());
         com.runzhi.aishell.ai.AIConfigManager manager = com.runzhi.aishell.ai.AIConfigManager.getInstance();
         manager.addConfig(runtimeConfig);
-        manager.setCurrentConfig(runtimeConfig.getName());
+        manager.setDefaultConfig(runtimeConfig.getName());
+        refreshDefaultConfigLabel();
         if (!configProfileCombo.getItems().contains(runtimeConfig.getName())) {
             configProfileCombo.getItems().add(runtimeConfig.getName());
         }
@@ -330,7 +345,7 @@ public class SettingsAIController {
             case "Anthropic" -> "Claude";
             case "阿里云" -> "Qwen";
             case "百度智能云" -> "ERNIE Bot";
-            case "Gemini", "Ollama", "DeepSeek", "Moonshot", "Mistral" -> provider;
+            case "Gemini", "Ollama", "DeepSeek", "Moonshot", "Mistral", "MiniMax", "Xiaomimimo" -> provider;
             case "智谱AI" -> "Zhipu";
             default -> "OpenAI";
         };
@@ -342,7 +357,7 @@ public class SettingsAIController {
             case "Claude" -> "Anthropic";
             case "Qwen" -> "阿里云";
             case "ERNIE Bot" -> "百度智能云";
-            case "Gemini", "Ollama", "DeepSeek", "Moonshot", "Mistral" -> type;
+            case "Gemini", "Ollama", "DeepSeek", "Moonshot", "Mistral", "MiniMax", "Xiaomimimo" -> type;
             case "Zhipu" -> "智谱AI";
             case "OpenAI" -> "OpenAI";
             default -> "自定义端点";

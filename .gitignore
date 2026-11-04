@@ -56,3 +56,6 @@ packaging/*.log
 /index.html
 /ui.js
 /ui.css
+
+### 本机参考资料###
+.zmodem-ref/

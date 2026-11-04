@@ -111,8 +111,8 @@ class TerminalTabServiceImplConcurrencyTest {
     }
 
     @Test
-    @DisplayName("getTabId 在标签页无显式 id 时回退到标签文本")
-    void getTabIdFallsBackToTabText() throws Exception {
+    @DisplayName("getTabId 在标签页无显式 id 时返回 null，不再以标签文本（主机名）充当身份")
+    void getTabIdReturnsNullWithoutHostnameFallback() throws Exception {
         AtomicReference<String> ref = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
         Platform.runLater(() -> {
@@ -120,7 +120,7 @@ class TerminalTabServiceImplConcurrencyTest {
             done.countDown();
         });
         assertTrue(done.await(10, TimeUnit.SECONDS));
-        assertEquals("session-A", ref.get(), "无显式 id 时应回退到标签文本");
+        assertNull(ref.get(), "v6 阶段 2：无显式 id 时不得回退到标签文本");
     }
 
     @Test

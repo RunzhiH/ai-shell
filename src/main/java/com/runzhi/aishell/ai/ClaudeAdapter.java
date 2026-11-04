@@ -24,7 +24,6 @@ public class ClaudeAdapter extends BaseAIAdapter implements StreamingAIAdapter {
     // 添加常量
     private static final String DEFAULT_BASE_URL = "https://api.anthropic.com/v1/messages";
     private static final String DEFAULT_MODEL = AppConstants.DEFAULT_CLAUDE_MODEL;
-    private static final int MAX_TOKENS = AppConstants.DEFAULT_MAX_TOKENS;
 
     public ClaudeAdapter(String apiKey, String baseUrl, String model) {
         super(apiKey, baseUrl, model, DEFAULT_BASE_URL, DEFAULT_MODEL);
@@ -42,9 +41,9 @@ public class ClaudeAdapter extends BaseAIAdapter implements StreamingAIAdapter {
             // 创建请求体
             JsonObject requestBody = new JsonObject();
             requestBody.addProperty("model", model);
-            requestBody.addProperty("max_tokens", MAX_TOKENS);
-            requestBody.addProperty("temperature", AppConstants.DEFAULT_TEMPERATURE);
-            requestBody.addProperty("top_p", AppConstants.DEFAULT_TOP_P);
+            requestBody.addProperty("max_tokens", effectiveMaxTokens());
+            requestBody.addProperty("temperature", currentTemperature());
+            requestBody.addProperty("top_p", currentTopP());
 
             // 创建消息数组
             JsonObject message = new JsonObject();
@@ -102,7 +101,7 @@ public class ClaudeAdapter extends BaseAIAdapter implements StreamingAIAdapter {
         if (!isConfigured()) throw new IllegalStateException(getName() + " 未配置 API Key，无法发起流式请求");
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
-        body.addProperty("max_tokens", Math.min(MAX_TOKENS, currentMaxTokens()));
+        body.addProperty("max_tokens", effectiveMaxTokens());
         body.addProperty("temperature", currentTemperature());
         body.addProperty("stream", true);
         JsonObject message = new JsonObject();

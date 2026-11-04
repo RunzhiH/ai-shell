@@ -43,23 +43,56 @@ public final class ShortcutConfigStore {
         catch (IllegalArgumentException ignored) { return false; }
     }
 
-    public static void exportTo(Path file) throws IOException {
+    /** Snapshot the persisted configuration for a settings draft. */
+    public static Map<String, String> snapshot() {
         Map<String, String> values = new LinkedHashMap<>();
         defaults().keySet().forEach(action -> values.put(action, get(action)));
+        return values;
+    }
+
+    /** Validate the complete draft before writing any preference. */
+    public static void validate(Map<String, String> values) {
+        Map<KeyCombination, String> assigned = new LinkedHashMap<>();
+        for (String action : defaults().keySet()) {
+            String shortcut = values.get(action);
+            if (shortcut == null || shortcut.isBlank()) continue;
+            KeyCombination key = KeyCombination.valueOf(shortcut.replace("Comma", ","));
+            String previous = assigned.putIfAbsent(key, action);
+            if (previous != null) throw new IllegalArgumentException("快捷键冲突：" + previous + " / " + action);
+        }
+    }
+
+    /** Apply a validated draft; missing actions are left unchanged. */
+    public static void saveAll(Map<String, String> values) {
+        Map<String, String> combined = new LinkedHashMap<>(snapshot());
+        combined.putAll(values);
+        validate(combined);
+        defaults().keySet().stream().filter(values::containsKey).forEach(action -> set(action, values.get(action)));
+    }
+
+    public static void exportTo(Path file) throws IOException { exportTo(file, snapshot()); }
+
+    /** Export the visible draft, including changes not yet applied. */
+    public static void exportTo(Path file, Map<String, String> values) throws IOException {
         Files.writeString(file, GSON.toJson(values), StandardCharsets.UTF_8);
     }
 
-    public static void importFrom(Path file) throws IOException {
-        Map<String, String> values = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8),
+    /** Parse and validate without changing live shortcuts. */
+    public static Map<String, String> readFrom(Path file) throws IOException { return readFrom(file, snapshot()); }
+
+    /** Merge a partial import into the current draft without discarding other unsaved edits. */
+    public static Map<String, String> readFrom(Path file, Map<String, String> base) throws IOException {
+        Map<String, String> imported = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8),
                 new TypeToken<Map<String, String>>() {}.getType());
-        if (values == null) throw new IllegalArgumentException("快捷键文件为空");
-        for (String action : defaults().keySet()) {
-            if (!values.containsKey(action)) continue;
-            String shortcut = values.get(action);
-            if (shortcut != null && !shortcut.isBlank()) KeyCombination.valueOf(shortcut.replace("Comma", ","));
-            set(action, shortcut);
-        }
+        if (imported == null) throw new IllegalArgumentException("快捷键文件为空");
+        Map<String, String> values = new LinkedHashMap<>(base);
+        defaults().keySet().stream().filter(imported::containsKey)
+                .forEach(action -> values.put(action, imported.get(action) == null ? "" : imported.get(action).trim()));
+        validate(values);
+        return values;
     }
+
+    public static void importFrom(Path file) throws IOException { saveAll(readFrom(file)); }
 
     private ShortcutConfigStore() {}
 }

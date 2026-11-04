@@ -7,36 +7,7 @@
 <VBox xmlns:fx="http://javafx.com/fxml" fx:controller="com.runzhi.aishell.controller.TerminalTabController"
       styleClass="terminal-panel"
       VBox.vgrow="ALWAYS">
-    <!-- 连接信息显示区域 -->
-    <HBox fx:id="connectionInfoBar" visible="false" managed="false" 
-          styleClass="terminal-toolbar" spacing="12"
-          alignment="CENTER_LEFT">
-        <Label fx:id="connectionStatusLabel" styleClass="connection-info-label" 
-               textFill="#4ec9b0" text="●">
-            <tooltip>
-                <Tooltip fx:id="connectionStatusTooltip" text="未连接"/>
-            </tooltip>
-        </Label>
-        <Label fx:id="connectionHostLabel" styleClass="connection-info-label" 
-               textFill="#dcdcaa" text="">
-            <tooltip>
-                <Tooltip fx:id="hostTooltip" text="主机地址"/>
-            </tooltip>
-        </Label>
-        <Label fx:id="connectionUserLabel" styleClass="connection-info-label" 
-               textFill="#569cd6" text="">
-            <tooltip>
-                <Tooltip fx:id="userTooltip" text="用户名"/>
-            </tooltip>
-        </Label>
-        <Region HBox.hgrow="ALWAYS"/>
-        <Button fx:id="reconnectButton" text="重连" onAction="#reconnectToServer" 
-                styleClass="toolbar-button">
-            <tooltip>
-                <Tooltip text="重新连接"/>
-            </tooltip>
-        </Button>
-    </HBox>
+    <!-- v6：已移除 tab 下方连接信息栏；连接目标由标签标题、底栏状态与工具栏重连表达 -->
     
     <!-- 终端输出区域 -->
     <InlineCssTextArea fx:id="terminalOutput"

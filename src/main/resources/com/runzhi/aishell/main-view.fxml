@@ -17,47 +17,48 @@
         <!-- 系统菜单（保留，功能不丢） -->
         <MenuBar VBox.vgrow="NEVER">
             <menus>
-                <Menu text="文件">
+                <Menu text="%main.file">
                     <items>
-                        <MenuItem text="新建连接配置…" onAction="#newConnection"/>
-                        <MenuItem text="打开配置" onAction="#openConfig"/>
+                        <MenuItem text="%main.newConfig" onAction="#newConnection"/>
+                        <MenuItem text="%main.openConfig" onAction="#openConfig"/>
                         <SeparatorMenuItem/>
-                        <MenuItem text="导入连接" onAction="#handleImportConnections"/>
-                        <MenuItem text="导出连接" onAction="#handleExportConnections"/>
+                        <MenuItem text="%main.import" onAction="#handleImportConnections"/>
+                        <MenuItem text="%main.export" onAction="#handleExportConnections"/>
                         <SeparatorMenuItem/>
-                        <MenuItem text="设置" onAction="#openSettings"/>
+                        <MenuItem text="%main.settings" onAction="#openSettings"/>
                         <SeparatorMenuItem/>
-                        <MenuItem text="退出" onAction="#exitApplication"/>
+                        <MenuItem text="%main.exit" onAction="#exitApplication"/>
                     </items>
                 </Menu>
-                <Menu text="连接">
+                <Menu text="%main.connections">
                     <items>
-                        <MenuItem text="打开连接管理" onAction="#connectToServer"/>
-                        <MenuItem text="重连所有 SSH 终端" onAction="#reconnectAllTerminals"/>
-                        <MenuItem text="断开连接" onAction="#disconnectFromServer"/>
+                        <MenuItem text="%main.manageConnections" onAction="#connectToServer"/>
+                        <MenuItem text="%main.reconnectAll" onAction="#reconnectAllTerminals"/>
+                        <MenuItem text="%main.disconnect" onAction="#disconnectFromServer"/>
                     </items>
                 </Menu>
-                <Menu text="视图">
+                <Menu text="%main.view">
                     <items>
-                        <MenuItem text="终端" onAction="#openTerminal"/>
-                        <MenuItem text="监控面板" onAction="#openMonitor"/>
-                        <MenuItem text="高级监控图表" onAction="#openAdvancedMonitorCharts"/>
-                        <MenuItem text="文件管理" onAction="#openFileTransfer"/>
-                        <MenuItem text="系统信息" onAction="#openSystemInfo"/>
+                        <MenuItem text="%main.terminal" onAction="#openTerminal"/>
+                        <MenuItem text="%main.monitorPanel" onAction="#openMonitor"/>
+                        <MenuItem text="%main.advancedMonitor" onAction="#openAdvancedMonitorCharts"/>
+                        <MenuItem text="%main.files" onAction="#openFiles"/>
+                        <MenuItem text="%main.systemInfo" onAction="#openSystemInfo"/>
                         <SeparatorMenuItem/>
-                        <MenuItem text="书签面板" onAction="#openBookmarkPanel"/>
-                        <MenuItem text="命令历史" onAction="#openCommandHistory"/>
+                        <MenuItem text="%main.bookmarks" onAction="#openBookmarkPanel"/>
+                        <MenuItem text="%main.history" onAction="#openCommandHistory"/>
                     </items>
                 </Menu>
                 <Menu text="AI">
                     <items>
-                        <MenuItem text="AI 助手" onAction="#openAIAssistant"/>
+                        <MenuItem text="%workbench.aiAssistant" onAction="#openAIAssistant"/>
+                        <MenuItem text="%workbench.agent" onAction="#openAgentWorkspace"/>
                     </items>
                 </Menu>
-                <Menu text="帮助">
+                <Menu text="%main.help">
                     <items>
-                        <MenuItem text="支持项目…" onAction="#openDonation"/>
-                        <MenuItem text="关于" onAction="#openAbout"/>
+                        <MenuItem text="%main.support" onAction="#openDonation"/>
+                        <MenuItem text="%main.about" onAction="#openAbout"/>
                     </items>
                 </Menu>
             </menus>
@@ -69,22 +70,31 @@
                 <Label text="AIShell" styleClass="brand-name"/>
                 <Label text="SSH + AI" styleClass="brand-tag"/>
                 <HBox spacing="2" styleClass="top-nav" alignment="CENTER_LEFT">
-                    <Button fx:id="navConnections" text="连接" onAction="#openConnectionList" styleClass="nav-item" mnemonicParsing="false"/>
-                    <Button fx:id="navTerminal" text="终端" onAction="#openTerminal" styleClass="nav-item" mnemonicParsing="false"/>
-                    <Button fx:id="navFiles" text="文件管理" onAction="#openFileTransfer" styleClass="nav-item" mnemonicParsing="false"/>
-                    <Button fx:id="navMonitor" text="监控" onAction="#openMonitor" styleClass="nav-item" mnemonicParsing="false"/>
-                    <Button fx:id="navAI" text="AI" onAction="#openAIAssistant" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button minWidth="-Infinity" fx:id="navConnections" text="%main.connections" onAction="#openConnectionList" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button minWidth="-Infinity" fx:id="navTerminal" text="%main.terminal" onAction="#openTerminal" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button minWidth="-Infinity" fx:id="navFiles" text="%main.files" onAction="#openFiles" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button minWidth="-Infinity" fx:id="navMonitor" text="%main.monitor" onAction="#openMonitor" styleClass="nav-item" mnemonicParsing="false"/>
+                    <Button minWidth="-Infinity" fx:id="navAI" text="%workbench.aiAssistant" onAction="#openAIAssistant" styleClass="nav-item" mnemonicParsing="false">
+                        <tooltip><Tooltip text="%workbench.aiAssistant.tip"/></tooltip>
+                    </Button>
                 </HBox>
                 <Region HBox.hgrow="ALWAYS"/>
-                <HBox spacing="6" alignment="CENTER_LEFT">
+                <!-- 当前目标：只放短标识，完整目标由代码写入 tooltip，避免挤压与重复拼接 -->
+                <HBox spacing="6" alignment="CENTER_LEFT" minWidth="140" prefWidth="240" maxWidth="340" HBox.hgrow="SOMETIMES">
                     <Label text="●" fx:id="hostStatusDot" style="-fx-text-fill: -fx-success-color;"/>
-                    <Label text="当前连接" styleClass="current-host-label"/>
-                    <Label fx:id="currentHostLabel" text="未连接" styleClass="current-host-value" maxWidth="240" textOverrun="CENTER_ELLIPSIS"/>
+                    <Label fx:id="currentHostLabel" text="%main.disconnected" styleClass="current-host-value" minWidth="0" maxWidth="320" HBox.hgrow="ALWAYS" textOverrun="ELLIPSIS">
+                        <tooltip><Tooltip text="${currentHostLabel.text}"/></tooltip>
+                    </Label>
                 </HBox>
-                <Button fx:id="btnToggleServer" text="服务器" onAction="#toggleServerPanel" styleClass="nav-item" mnemonicParsing="false"/>
-                <Button fx:id="btnTheme" text="深色" onAction="#toggleTheme" styleClass="nav-item" mnemonicParsing="false"/>
-                <Button text="+ 新建连接" onAction="#newConnection" styleClass="primary-button" mnemonicParsing="false"/>
-                <Button text="设置" onAction="#openSettings" styleClass="nav-item" mnemonicParsing="false"/>
+                <Button minWidth="-Infinity" fx:id="btnToggleServer" text="%main.servers" onAction="#toggleServerPanel" styleClass="nav-item" mnemonicParsing="false"/>
+                <Button minWidth="-Infinity" fx:id="btnTheme" text="%main.dark" onAction="#toggleTheme" styleClass="nav-item" mnemonicParsing="false"/>
+                <Button minWidth="-Infinity" text="%main.newConnection" onAction="#newConnection" styleClass="primary-button" mnemonicParsing="false"/>
+                <Button fx:id="btnCommandPalette" minWidth="-Infinity" text="%main.palette" onAction="#openCommandPalette" styleClass="nav-item" mnemonicParsing="false">
+                    <tooltip>
+                        <Tooltip text="%main.paletteTip"/>
+                    </tooltip>
+                </Button>
+                <Button minWidth="-Infinity" text="%main.settings" onAction="#openSettings" styleClass="nav-item" mnemonicParsing="false"/>
             </children>
         </HBox>
 
@@ -98,71 +108,87 @@
                       minWidth="224" prefWidth="248" maxWidth="340"
                       HBox.hgrow="NEVER" managed="true" visible="true">
                     <children>
-                        <HBox styleClass="panel-head" alignment="CENTER_LEFT" spacing="6">
-                            <Label text="服务器" styleClass="panel-title"/>
+                        <HBox fx:id="serverPanelHead" styleClass="panel-head" alignment="CENTER_LEFT" spacing="6">
+                            <Label text="%main.servers" styleClass="panel-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
                             <Button fx:id="btnCollapseServer" text="‹" onAction="#toggleServerPanel"
-                                    styleClass="nav-item" mnemonicParsing="false"/>
+                                    styleClass="nav-item" mnemonicParsing="false"
+                                    accessibleText="%main.collapseServers">
+                                <tooltip>
+                                    <Tooltip text="%main.collapseServers"/>
+                                </tooltip>
+                            </Button>
                         </HBox>
 
-                        <VBox fx:id="serverContent" VBox.vgrow="NEVER" prefHeight="160" minHeight="80">
-                            <padding>
-                                <Insets top="8" right="8" bottom="4" left="8"/>
-                            </padding>
-                            <children>
-                                <Label text="正在加载服务器…"
-                                       wrapText="true"
-                                       style="-fx-text-fill: -fx-text-secondary;"/>
-                            </children>
-                        </VBox>
+                        <TextField fx:id="serverTreeFilter" promptText="%main.filter"
+                                   styleClass="sidebar-filter"/>
 
-                        <Separator/>
+                        <!-- 服务器会话树：单击只选中，双击 / Enter 激活会话 -->
+                        <TreeView fx:id="serverTree" VBox.vgrow="ALWAYS" minHeight="120"
+                                  styleClass="server-tree"/>
 
-                        <VBox styleClass="system-info-panel" spacing="10">
-                            <Label text="系统概览" styleClass="sidebar-section-title"/>
-                            <HBox alignment="CENTER_LEFT" spacing="5">
-                                <Label text="●" styleClass="status-indicator"/>
-                                <Label text="当前主机资源" styleClass="status-label"/>
-                            </HBox>
-                            <HBox>
-                                <Label text="CPU" styleClass="system-info-label"/>
-                                <Label fx:id="cpuLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
-                            </HBox>
-                            <HBox>
-                                <Label text="内存" styleClass="system-info-label"/>
-                                <Label fx:id="memoryLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
-                            </HBox>
-                            <HBox>
-                                <Label text="负载" styleClass="system-info-label"/>
-                                <Label fx:id="loadLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
-                            </HBox>
-                        </VBox>
-                        <TitledPane text="更多系统信息" expanded="false" VBox.vgrow="ALWAYS"
-                                    styleClass="sidebar-details">
+                        <Label fx:id="serverPanelHint" text="%main.activateHint" styleClass="sidebar-hint"/>
+
+                        <Separator fx:id="serverPanelSeparator"/>
+
+                        <!-- 活动会话身份/指标固定为侧栏内独立滚动块，避免展开更多信息时被窗口裁掉 -->
+                        <ScrollPane fx:id="activeSessionScroll" fitToWidth="true"
+                                    hbarPolicy="NEVER" vbarPolicy="AS_NEEDED" minHeight="0"
+                                    styleClass="sidebar-scroll">
                             <content>
-                                <VBox spacing="8" styleClass="sidebar-details-content">
-                                    <HBox>
-                                        <Label text="运行时间" styleClass="system-info-label"/>
-                                        <Label fx:id="uptimeLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
-                                    </HBox>
-                                    <HBox>
-                                        <Label text="交换空间" styleClass="system-info-label"/>
-                                        <Label fx:id="swapLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
-                                    </HBox>
-                                    <Separator/>
-                                    <Label text="磁盘" styleClass="sidebar-section-title"/>
-                                    <TableView fx:id="storageTable" prefHeight="150" VBox.vgrow="ALWAYS" styleClass="storage-table">
-                                        <columns>
-                                            <TableColumn fx:id="pathColumn" text="路径" prefWidth="100.0"/>
-                                            <TableColumn fx:id="sizeColumn" text="可用/大小" prefWidth="90.0"/>
-                                        </columns>
-                                        <columnResizePolicy>
-                                            <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
-                                        </columnResizePolicy>
-                                    </TableView>
+                                <VBox fx:id="activeSessionPanel" styleClass="active-session-panel"
+                                      spacing="8" minWidth="0">
+                                    <Label fx:id="activeSessionTitle" text="%main.activeEmpty"
+                                           styleClass="sidebar-section-title" wrapText="true" maxWidth="Infinity"/>
+                                    <Label fx:id="activeSessionName" text="%main.disconnected"
+                                           styleClass="active-session-name" wrapText="true" maxWidth="Infinity"/>
+                            <VBox fx:id="metricsGroup" spacing="8" visible="false" managed="false">
+                                <HBox>
+                                    <Label text="CPU" styleClass="system-info-label"/>
+                                    <Label fx:id="cpuLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                </HBox>
+                                <HBox>
+                                    <Label text="%main.memory" styleClass="system-info-label"/>
+                                    <Label fx:id="memoryLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                </HBox>
+                                <HBox>
+                                    <Label text="%main.load" styleClass="system-info-label"/>
+                                    <Label fx:id="loadLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                </HBox>
+                                <HBox>
+                                    <Label text="%main.network" styleClass="system-info-label"/>
+                                    <Label fx:id="netLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                </HBox>
+                                <TitledPane text="%main.moreInfo" expanded="false" VBox.vgrow="NEVER"
+                                            styleClass="sidebar-details">
+                                    <content>
+                                        <VBox spacing="8" styleClass="sidebar-details-content">
+                                            <HBox>
+                                                <Label text="%main.uptime" styleClass="system-info-label"/>
+                                                <Label fx:id="uptimeLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <HBox>
+                                                <Label text="%main.swap" styleClass="system-info-label"/>
+                                                <Label fx:id="swapLabel" text="—" styleClass="system-info-value" HBox.hgrow="ALWAYS"/>
+                                            </HBox>
+                                            <Separator/>
+                                            <Label text="%main.disk" styleClass="sidebar-section-title"/>
+                                            <TableView fx:id="storageTable" prefHeight="150" VBox.vgrow="ALWAYS" styleClass="storage-table">
+                                                <columns>
+                                                    <TableColumn fx:id="pathColumn" text="%main.path" prefWidth="100.0"/>
+                                                    <TableColumn fx:id="sizeColumn" text="%main.available" prefWidth="90.0"/>
+                                                </columns>
+                                                <columnResizePolicy>
+                                                    <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                                                </columnResizePolicy>
+                                            </TableView>
+                                        </VBox>
+                                    </content>
+                                </TitledPane>
+                            </VBox>
                                 </VBox>
                             </content>
-                        </TitledPane>
+                        </ScrollPane>
                     </children>
                 </VBox>
 
@@ -177,23 +203,25 @@
         <left>
             <HBox spacing="8" alignment="CENTER_LEFT">
                 <Label fx:id="statusTerminalTab" text="Terminal" styleClass="status-label"/>
-                <Label text="·" styleClass="status-label"/>
-                <Button fx:id="btnFilesDrawer" text="SFTP 抽屉 ↑" onAction="#toggleFilesDrawer"
+                <Label fx:id="statusPageSeparator" text="·" styleClass="status-label"/>
+                <Button fx:id="btnFilesDrawer" text="%main.files" onAction="#toggleFilesDrawer"
                         styleClass="status-item" mnemonicParsing="false"/>
             </HBox>
         </left>
         <center>
             <HBox spacing="10" alignment="CENTER">
-                <Label text="目标" styleClass="status-label"/>
+                <Label text="%main.target" styleClass="status-label"/>
                 <Label fx:id="statusHostLabel" text="—" styleClass="status-label"/>
-                <Label text="健康" styleClass="status-label"/>
-                <Label fx:id="statusHealthLabel" text="就绪" styleClass="status-ok"/>
+                <Label text="%main.health" styleClass="status-label"/>
+                <Label fx:id="statusHealthLabel" text="%main.ready" styleClass="status-ok"/>
                 <Label text="Agent" styleClass="status-label"/>
-                <Label fx:id="statusAiLabel" text="就绪" styleClass="status-ai"/>
+                <Label fx:id="statusAiLabel" text="%main.ready" styleClass="status-ai"/>
+                <Label fx:id="statusApprovalLocator" text="" styleClass="status-approval-locator"
+                       onMouseClicked="#locateApproval" visible="false"/>
             </HBox>
         </center>
         <right>
-            <Label fx:id="statusLabel" text="就绪" styleClass="status-label"
+            <Label fx:id="statusLabel" text="%main.ready" styleClass="status-label"
                    BorderPane.alignment="CENTER_RIGHT"/>
         </right>
     </BorderPane>

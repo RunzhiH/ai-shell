@@ -150,6 +150,15 @@ public class FileTransferService {
      * @param path 路径
      * @return 文件信息列表
      */
+    public String canonicalDirectory(String path) throws SftpException {
+        synchronized(channelLock) {
+            try { connect(); } catch(JSchException failure) { throw new IllegalStateException(failure); }
+            String value=path==null || path.isBlank()?".":path;
+            if(value.equals("~") || value.startsWith("~/")) value=sftpChannel.getHome()+value.substring(1);
+            return sftpChannel.realpath(value);
+        }
+    }
+
     public ObservableList<FileInfo> listFiles(String path) throws SftpException {
         synchronized (channelLock) {
             try {
@@ -542,11 +551,12 @@ public class FileTransferService {
                 sftpChannel.put(localFile.getAbsolutePath(), remoteFilePath, null, transferMode);
             }
         } catch (SftpException e) {
+            String reason = formatSftpFailure(e);
             if (callback != null) {
-                callback.onError(localFile.getPath(), e.getMessage());
+                callback.onError(localFile.getPath(), reason);
             }
             // 单个文件失败不中断整批传输：记录后继续，最后统一汇报
-            failedFiles.add(localFile.getPath() + "（" + e.getMessage() + "）");
+            failedFiles.add(localFile.getPath() + "（" + reason + "）");
         }
     }
 
@@ -634,11 +644,12 @@ public class FileTransferService {
                     sftpChannel.get(remoteFilePath, localFilePath, null, transferMode);
                 }
             } catch (SftpException e) {
+                String reason = formatSftpFailure(e);
                 if (callback != null) {
-                    callback.onError(remoteFilePath, e.getMessage());
+                    callback.onError(remoteFilePath, reason);
                 }
                 // 单个文件失败不中断整批传输：记录后继续，最后统一汇报
-                failedFiles.add(remoteFilePath + "（" + e.getMessage() + "）");
+                failedFiles.add(remoteFilePath + "（" + reason + "）");
             }
             }
             if (!failedFiles.isEmpty()) {
@@ -680,6 +691,36 @@ public class FileTransferService {
             }
             sftpChannel.get(remoteFilePath, localFilePath);
         }
+    }
+
+    /**
+     * 把 SftpException 转换为可定位的失败原因。
+     * <p>
+     * JSch 对协议级错误（SFTP 响应类型错乱、通道流 EOF）只抛出空消息的 SftpException
+     * （见 ChannelSftp 源码中 {@code new SftpException(SSH_FX_FAILURE, "")} 的抛点）；
+     * 而服务器侧常规错误经由 throwStatusError 一定带有 "SSH_FX_*: 描述" 前缀，
+     * 本地侧错误则包装为 e.toString()。仅拼接 getMessage() 会得到空括号，
+     * 因此统一补上错误码，并对空消息给出通道异常的明确说明，同时记录堆栈便于排查。
+     */
+    private String formatSftpFailure(SftpException e) {
+        String code = switch (e.id) {
+            case ChannelSftp.SSH_FX_OK -> "SSH_FX_OK";
+            case ChannelSftp.SSH_FX_EOF -> "SSH_FX_EOF";
+            case ChannelSftp.SSH_FX_NO_SUCH_FILE -> "SSH_FX_NO_SUCH_FILE";
+            case ChannelSftp.SSH_FX_PERMISSION_DENIED -> "SSH_FX_PERMISSION_DENIED";
+            case ChannelSftp.SSH_FX_FAILURE -> "SSH_FX_FAILURE";
+            case ChannelSftp.SSH_FX_BAD_MESSAGE -> "SSH_FX_BAD_MESSAGE";
+            case ChannelSftp.SSH_FX_NO_CONNECTION -> "SSH_FX_NO_CONNECTION";
+            case ChannelSftp.SSH_FX_CONNECTION_LOST -> "SSH_FX_CONNECTION_LOST";
+            case ChannelSftp.SSH_FX_OP_UNSUPPORTED -> "SSH_FX_OP_UNSUPPORTED";
+            default -> "SSH_FX_CODE_" + e.id;
+        };
+        String message = e.getMessage();
+        if (message == null || message.isBlank()) {
+            log.warn("SFTP 操作失败（{}）：服务器未返回消息，通常为 SFTP 通道响应错乱或通道已断开", code, e);
+            return code + ": SFTP通道异常（响应错乱或连接已断开），请重连会话后重试";
+        }
+        return code + ": " + message;
     }
 
     /**

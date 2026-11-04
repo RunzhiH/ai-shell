@@ -20,7 +20,7 @@ public class AppConstants {
     
     // 应用程序信息
     public static final String APP_NAME = "AIShell";
-    public static final String APP_VERSION = "1.0";
+    public static final String APP_VERSION = "1.1.0";
     
     // 配置相关
     public static final String CONFIG_DIR = ".aishell";

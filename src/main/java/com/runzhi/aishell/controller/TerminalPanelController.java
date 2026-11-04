@@ -5,8 +5,10 @@
 
 package com.runzhi.aishell.controller;
 
+import com.runzhi.aishell.agent.AgentSessionTracker;
 import com.runzhi.aishell.common.enhancement.ShellEnhancementManager;
 import com.runzhi.aishell.common.enhancement.ThemeEnhancer;
+import com.runzhi.aishell.common.util.TabIdentity;
 import com.runzhi.aishell.common.util.UITools;
 import com.runzhi.aishell.service.TerminalCommandService;
 import com.runzhi.aishell.service.TerminalConnectionService;
@@ -26,6 +28,8 @@ import javafx.scene.Parent;
 import javafx.scene.control.*;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
+import javafx.geometry.Pos;
 import javafx.util.Duration;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -53,7 +57,20 @@ import java.util.Map;
 @EqualsAndHashCode(callSuper = true)
 @Data
 @Slf4j
-public class TerminalPanelController extends BaseController {
+public class TerminalPanelController extends BaseController implements com.runzhi.aishell.common.util.Cleanable {
+
+    /** External subscriptions must be released when this controller is destroyed. */
+    private AutoCloseable agentStateSubscription;
+    private javafx.collections.MapChangeListener<String, Object> connectionParamsListener;
+    private javafx.beans.value.ChangeListener<javafx.scene.Scene> workspaceSceneListener;
+    private final javafx.beans.value.ChangeListener<Number> workspaceWidthListener =
+            (_, _, width) -> { if (!this.disposed) applyWorkspaceLayout(width.doubleValue()); };
+    private volatile boolean disposed;
+    /** 主界面底栏入口订阅当前标签文件区展开状态。 */
+    private Runnable fileAreaStateListener;
+    private Node observedFileAreaBody;
+    private final javafx.beans.value.ChangeListener<Boolean> fileAreaManagedListener =
+            (_, _, _) -> { if (fileAreaStateListener != null) fileAreaStateListener.run(); };
 
     // 标签页容器
     @FXML
@@ -62,6 +79,15 @@ public class TerminalPanelController extends BaseController {
     // Terminal / Agent 分栏（UI 优化方案 V1 §9,§35：比例可拖动并保存）
     @FXML
     private javafx.scene.control.SplitPane terminalSplitPane;
+    /** 终端宿主栈：Agent overlay 模式下浮在终端之上，不压缩终端宽度 */
+    @FXML
+    private StackPane terminalStack;
+
+    /** Agent 呈现模式：宽屏三栏分栏 / 窄屏 overlay（状态页规范） */
+    private enum AgentMode { SPLIT, OVERLAY, DRAWER }
+    private static final double WIDE_WIDTH_THRESHOLD = 1440;
+    private static final double OVERLAY_AGENT_WIDTH = 352;
+    private AgentMode agentMode = AgentMode.SPLIT;
     private static final java.util.prefs.Preferences LAYOUT_PREFS =
             java.util.prefs.Preferences.userNodeForPackage(TerminalPanelController.class);
     private static final String SPLIT_DIVIDER_KEY = "terminal.agent.split";
@@ -70,7 +96,7 @@ public class TerminalPanelController extends BaseController {
     @FXML
     private VBox agentWorkspaceHost;
     @FXML
-    private Button btnAgentWorkspace;
+    private ToggleButton btnAgentWorkspace;
 
     // 服务引用
     private SSHService sshService;
@@ -83,6 +109,21 @@ public class TerminalPanelController extends BaseController {
 
     private com.runzhi.aishell.common.ai.AIHelperService aiHelperService;
     private final Map<String, List<ForwardingRule>> forwardingRules = new HashMap<>();
+
+    /** tab 属性键：连接参数 / 基础标题（不含 Agent 角标） */
+    static final String CONNECTION_PARAMS_KEY = "connectionParams";
+    static final String BASE_TITLE_KEY = "baseTitle";
+
+    /** 关闭被阻止时的说明回调，默认弹出对话框；测试可替换 */
+    private java.util.function.Consumer<String> blockedCloseHandler = this::showBlockedCloseDialog;
+
+    /** 会话级桥接（initialize 之后非空），供测试直接验证会话归属 */
+    private AgentWorkspaceBridge sessionBridge;
+
+    /** 替换关闭阻止说明回调，供无头测试避免模态对话框。 */
+    void setBlockedCloseHandler(java.util.function.Consumer<String> handler) {
+        this.blockedCloseHandler = handler == null ? this::showBlockedCloseDialog : handler;
+    }
 
     private record ForwardingRule(String type, String bindHost, int listenPort,
                                   String targetHost, int targetPort) {
@@ -104,32 +145,107 @@ public class TerminalPanelController extends BaseController {
     private static final double MIN_TERMINAL_RATIO = 0.45;
     private static final double MAX_TERMINAL_RATIO = 0.82;
 
-    private void applyAgentWorkspaceVisibility() {
-        boolean open = LAYOUT_PREFS.getBoolean(AGENT_OPEN_KEY, true);
-        double saved = LAYOUT_PREFS.getDouble(SPLIT_DIVIDER_KEY, DEFAULT_AGENT_DIVIDER);
-        if (saved < MIN_TERMINAL_RATIO || saved > MAX_TERMINAL_RATIO) saved = DEFAULT_AGENT_DIVIDER;
+    /** 按可用宽度应用 Agent 呈现模式：≥1440 三栏分栏，否则 overlay。 */
+    void applyWorkspaceLayout(double width) {
+        AgentMode target = width >= WIDE_WIDTH_THRESHOLD ? AgentMode.SPLIT : width >= 1200 ? AgentMode.OVERLAY : AgentMode.DRAWER;
+        if (target != agentMode) setAgentMode(target);
+    }
 
+    /** 监听场景宽度切换 Agent 模式；FXML 注入的节点在 initialize 时尚未挂 Scene。 */
+    private void watchWorkspaceWidth() {
+        if (terminalSplitPane == null || workspaceSceneListener != null) return;
+        workspaceSceneListener = (_, oldScene, newScene) -> {
+            if (oldScene != null) oldScene.widthProperty().removeListener(workspaceWidthListener);
+            if (newScene == null || disposed) return;
+            applyWorkspaceLayout(newScene.getWidth());
+            newScene.widthProperty().addListener(workspaceWidthListener);
+        };
+        terminalSplitPane.sceneProperty().addListener(workspaceSceneListener);
+        if (terminalSplitPane.getScene() != null) workspaceSceneListener.changed(
+                terminalSplitPane.sceneProperty(), null, terminalSplitPane.getScene());
+    }
+
+    private void setAgentMode(AgentMode mode) {
+        agentMode = mode;
+        applyAgentPlacement();
+    }
+
+    /**
+     * 把 Agent 宿主放到当前模式对应的位置。收起只切可见态：
+     * 不取消任务、不销毁控制器、也不释放目标标签的关闭保护。
+     */
+    private void applyAgentPlacement() {
+        if (agentWorkspaceHost == null || terminalSplitPane == null) return;
+        boolean open = agentWorkspaceHost.isVisible();
+        if (terminalSplitPane.getItems().contains(agentWorkspaceHost)) {
+            terminalSplitPane.getItems().remove(agentWorkspaceHost);
+        }
+        if (terminalStack != null && terminalStack.getChildren().contains(agentWorkspaceHost)) {
+            terminalStack.getChildren().remove(agentWorkspaceHost);
+        }
+        if (terminalTabPane != null) {
+            boolean showTerminal = !(open && agentMode == AgentMode.DRAWER);
+            terminalTabPane.setVisible(showTerminal);
+            terminalTabPane.setManaged(showTerminal);
+            for (Tab tab : terminalTabPane.getTabs()) {
+                Node body = findInTabTree(tab, node -> node.getStyleClass().contains("file-drawer-body"));
+                if (body instanceof javafx.scene.layout.Region region) {
+                    region.maxWidthProperty().unbind();
+                    if (open && agentMode == AgentMode.OVERLAY && terminalStack != null)
+                        region.maxWidthProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
+                                () -> Math.max(200, terminalStack.getWidth() - OVERLAY_AGENT_WIDTH - 12), terminalStack.widthProperty()));
+                    else region.setMaxWidth(Double.MAX_VALUE);
+                }
+            }
+        }
+        agentWorkspaceHost.getStyleClass().remove("agent-overlay");
+        if (open && agentMode == AgentMode.OVERLAY) agentWorkspaceHost.getStyleClass().add("agent-overlay");
+        if (!open) return;
+        if (agentMode == AgentMode.SPLIT) {
+            terminalSplitPane.getItems().add(agentWorkspaceHost);
+            double saved = LAYOUT_PREFS.getDouble(SPLIT_DIVIDER_KEY, DEFAULT_AGENT_DIVIDER);
+            if (saved < MIN_TERMINAL_RATIO || saved > MAX_TERMINAL_RATIO) saved = DEFAULT_AGENT_DIVIDER;
+            // 回到分栏：恢复可伸缩约束，由分隔条决定宽度
+            agentWorkspaceHost.setPrefWidth(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+            agentWorkspaceHost.setMaxWidth(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+            terminalSplitPane.setDividerPositions(saved);
+        } else {
+            // overlay：浮在终端右侧 352px（状态页规范），终端保持完整宽度。
+            // StackPane 会把可伸缩子节点拉满：必须同时限制 pref 与 max，否则 Agent 覆盖整个终端。
+            if (terminalStack != null) {
+                terminalStack.getChildren().add(agentWorkspaceHost);
+                StackPane.setAlignment(agentWorkspaceHost, Pos.CENTER_RIGHT);
+            } else {
+                terminalSplitPane.getItems().add(agentWorkspaceHost);
+            }
+            agentWorkspaceHost.setPrefWidth(agentMode == AgentMode.DRAWER ? javafx.scene.layout.Region.USE_COMPUTED_SIZE : OVERLAY_AGENT_WIDTH);
+            agentWorkspaceHost.setMaxWidth(agentMode == AgentMode.DRAWER ? Double.MAX_VALUE : OVERLAY_AGENT_WIDTH);
+        }
+    }
+
+    private void applyAgentWorkspaceVisibility() {
+        // 无用户偏好时默认收起，让终端主工作区优先；已保存值（true/false）原样恢复。
+        boolean open = LAYOUT_PREFS.getBoolean(AGENT_OPEN_KEY, false);
         if (agentWorkspaceHost != null) {
             agentWorkspaceHost.setVisible(open);
             agentWorkspaceHost.setManaged(open);
-            if (open) {
-                agentWorkspaceHost.setPrefWidth(Math.max(280, (1.0 - saved) * 900));
-            }
         }
-        if (terminalSplitPane != null) {
-            if (open) {
-                terminalSplitPane.setDividerPositions(saved);
-            } else {
-                // 收起时终端占满
-                terminalSplitPane.setDividerPositions(1.0);
-            }
-        }
-        if (btnAgentWorkspace != null) {
-            btnAgentWorkspace.setText(open ? "Agent ●" : "Agent");
-        }
+        applyAgentPlacement();
+        syncAgentWorkspaceToggle(open);
         if (agentWorkspaceController != null && open && terminalTabPane != null) {
             agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
         }
+    }
+
+    /** Visual and accessible toggle state follow actual workspace visibility. */
+    private void syncAgentWorkspaceToggle(boolean open) {
+        if (btnAgentWorkspace == null) return;
+        btnAgentWorkspace.setSelected(open);
+        btnAgentWorkspace.setAccessibleText(I18n.tr("workbench.agent"));
+        String action = I18n.tr(open ? "workbench.agent.hide" : "workbench.agent.show");
+        btnAgentWorkspace.setAccessibleHelp(action);
+        if (btnAgentWorkspace.getTooltip() == null) btnAgentWorkspace.setTooltip(new Tooltip());
+        btnAgentWorkspace.getTooltip().setText(action);
     }
 
     /** 终端内 Agent 开关：唯一主 Agent（右侧聊天默认关） */
@@ -140,52 +256,104 @@ public class TerminalPanelController extends BaseController {
             agentWorkspaceHost.setVisible(open);
             agentWorkspaceHost.setManaged(open);
         }
-        if (open && terminalSplitPane != null) {
-            double saved = LAYOUT_PREFS.getDouble(SPLIT_DIVIDER_KEY, DEFAULT_AGENT_DIVIDER);
-            if (saved < MIN_TERMINAL_RATIO || saved > MAX_TERMINAL_RATIO) saved = DEFAULT_AGENT_DIVIDER;
-            terminalSplitPane.setDividerPositions(saved);
-        } else if (terminalSplitPane != null) {
-            terminalSplitPane.setDividerPositions(1.0);
-        }
+        applyAgentPlacement();
+        LAYOUT_PREFS.putBoolean(AGENT_OPEN_KEY, open);
+        syncAgentWorkspaceToggle(open);
         if (agentWorkspaceController != null && open && terminalTabPane != null) {
             agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
         }
-        LAYOUT_PREFS.putBoolean(AGENT_OPEN_KEY, open);
-        if (btnAgentWorkspace != null) {
-            btnAgentWorkspace.setText(open ? "Agent ●" : "Agent");
-        }
     }
 
-    /** 打开终端内 Agent（供主界面「AI」入口使用） */
+    /** 打开终端内 Agent（供 Agent 菜单与审批定位入口使用） */
     public void showAgentWorkspace() {
         if (agentWorkspaceHost != null && !agentWorkspaceHost.isVisible()) {
             toggleAgentWorkspace();
-        } else if (agentWorkspaceController != null && terminalTabPane != null) {
-            agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
+        } else if (agentWorkspaceHost != null) {
+            syncAgentWorkspaceToggle(agentWorkspaceHost.isVisible());
+            if (agentWorkspaceController != null && terminalTabPane != null)
+                agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
         }
     }
 
-    /** V1 §12：切换当前标签的 SFTP 文件 Drawer */
-    public void toggleFileDrawer() {
+    public void focusPendingApproval(String sessionId) {
+        focusTabById(sessionId);
+        showAgentWorkspace();
+        if(agentWorkspaceController!=null && terminalTabPane!=null) {
+            Tab target=terminalTabPane.getTabs().stream().filter(t->sessionId.equals(t.getId())).findFirst().orElse(null);
+            agentWorkspaceController.focusApproval(target);
+        }
+    }
+
+    /** 文件抽屉的切换结果：只有真正展开或收起才算成功。 */
+    public enum DrawerResult { OPENED, CLOSED, UNAVAILABLE }
+
+    /** 当前标签文件区状态；入口据此禁用并给出原因。 */
+    public enum FileAreaState { UNAVAILABLE, CLOSED, OPEN }
+
+    public FileAreaState fileAreaState() {
         Tab selected = terminalTabPane != null ? terminalTabPane.getSelectionModel().getSelectedItem() : null;
-        if (selected == null) {
-            return;
+        if (selected == null) return FileAreaState.UNAVAILABLE;
+        Node body = findFileDrawerBody(selected);
+        if (body == null) return FileAreaState.UNAVAILABLE;
+        return body.isVisible() && body.isManaged() ? FileAreaState.OPEN : FileAreaState.CLOSED;
+    }
+
+    /** 主入口：幂等展开当前标签文件区，已展开时保持打开而不是被再次点击收起。 */
+    public DrawerResult showFileDrawer() {
+        Tab selected = terminalTabPane != null ? terminalTabPane.getSelectionModel().getSelectedItem() : null;
+        if (selected == null) return DrawerResult.UNAVAILABLE;
+        Node body = findFileDrawerBody(selected);
+        if (body == null) return DrawerResult.UNAVAILABLE;
+        setFileDrawerOpen(selected, body, true);
+        return DrawerResult.OPENED;
+    }
+
+    /** 底栏切换入口：展开/收起当前标签文件区，并返回真实结果。 */
+    public DrawerResult toggleFileDrawer() {
+        Tab selected = terminalTabPane != null ? terminalTabPane.getSelectionModel().getSelectedItem() : null;
+        if (selected == null) return DrawerResult.UNAVAILABLE;
+        Node body = findFileDrawerBody(selected);
+        if (body == null) return DrawerResult.UNAVAILABLE;
+        boolean open = !(body.isVisible() && body.isManaged());
+        setFileDrawerOpen(selected, body, open);
+        return open ? DrawerResult.OPENED : DrawerResult.CLOSED;
+    }
+
+    /** 当前标签是否存在可展开的文件区（入口据此置灰或提示）。 */
+    public boolean hasFileDrawer() {
+        return fileAreaState() != FileAreaState.UNAVAILABLE;
+    }
+
+    private Node findFileDrawerBody(Tab tab) {
+        return findInTabTree(tab, n -> n.getStyleClass().contains("file-drawer-body"));
+    }
+
+    /** 直接操作抽屉体，避免用模拟点击切换状态；同时同步文件控制器的可见性。 */
+    private void setFileDrawerOpen(Tab tab, Node body, boolean open) {
+        body.setManaged(open);
+        body.setVisible(open);
+        FileManagerPanelController fileManager = findFileManagerController(tab.getContent());
+        if (fileManager != null) fileManager.setPanelVisible(open);
+    }
+
+    /** 底栏入口订阅当前标签文件区的展开/收起变化，标题点击或程序切换都能同步。 */
+    public void setFileAreaStateListener(Runnable listener) {
+        this.fileAreaStateListener = listener;
+        observeSelectedFileArea();
+    }
+
+    private void observeSelectedFileArea() {
+        if (observedFileAreaBody != null) {
+            observedFileAreaBody.managedProperty().removeListener(fileAreaManagedListener);
+            observedFileAreaBody.visibleProperty().removeListener(fileAreaManagedListener);
+            observedFileAreaBody = null;
         }
-        Node header = findInTabTree(selected, n -> n.getStyleClass().contains("file-drawer-header"));
-        if (header != null) {
-            javafx.scene.input.MouseEvent click = new javafx.scene.input.MouseEvent(
-                    javafx.scene.input.MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
-                    javafx.scene.input.MouseButton.PRIMARY, 1,
-                    false, false, false, false, true, false, false,
-                    true, false, true, null);
-            javafx.event.Event.fireEvent(header, click);
-            return;
-        }
-        Node body = findInTabTree(selected, n -> n.getStyleClass().contains("file-drawer-body"));
-        if (body instanceof VBox vb) {
-            boolean open = !vb.isManaged();
-            vb.setManaged(open);
-            vb.setVisible(open);
+        Tab selected = terminalTabPane != null ? terminalTabPane.getSelectionModel().getSelectedItem() : null;
+        if (selected == null) return;
+        observedFileAreaBody = findFileDrawerBody(selected);
+        if (observedFileAreaBody != null) {
+            observedFileAreaBody.managedProperty().addListener(fileAreaManagedListener);
+            observedFileAreaBody.visibleProperty().addListener(fileAreaManagedListener);
         }
     }
 
@@ -430,11 +598,12 @@ public class TerminalPanelController extends BaseController {
         terminalConnectionService = moduleManager.getTerminalConnectionService();
         terminalUIService = moduleManager.getTerminalUIService();
 
+        sessionBridge = new AgentWorkspaceBridge(this::insertCommandIntoSession, this::cancelSession);
         if (agentWorkspaceController != null) {
             agentWorkspaceController.configure(
                     () -> terminalTabPane.getSelectionModel().getSelectedItem(),
                     terminalCommandService,
-                    this::insertCommandIntoTerminal);
+                    sessionBridge);
         }
 
         // 使用 TerminalTabService 来初始化终端面板
@@ -446,8 +615,22 @@ public class TerminalPanelController extends BaseController {
         // 此前只有消费方没有生产方，相关功能全部恒失败（2026-10-23 审计 P1-1）
         com.runzhi.aishell.common.util.ParameterManager.getInstance().put("terminalTabPane", terminalTabPane);
 
-        // Agent 与 Terminal 并列显示，初始比例为 76:24；用户调整后恢复保存值。
+        // Agent 默认收起，终端优先；用户偏好与拖动比例仍原样恢复。
         applyAgentWorkspaceVisibility();
+
+        // Agent 会话状态变化 → 更新目标标签角标（运行/待审批归属到具体 tab）
+        agentStateSubscription = AgentSessionTracker.getInstance().addListener(state -> Platform.runLater(() -> {
+            if (!disposed) refreshAgentBadges();
+        }));
+
+        // 响应式布局：≥1440 三栏分栏；1200–1439 Agent 为 overlay，不压缩终端
+        watchWorkspaceWidth();
+        if (terminalStack != null) terminalStack.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, event -> {
+            if (agentMode != AgentMode.OVERLAY || agentWorkspaceHost == null || !agentWorkspaceHost.isVisible()) return;
+            Node node = event.getTarget() instanceof Node target ? target : null;
+            while (node != null && node != agentWorkspaceHost) node = node.getParent();
+            if (node == null) toggleAgentWorkspace();
+        });
 
         // 支持双击新建终端 Tab
         if (terminalTabService != null) {
@@ -459,12 +642,12 @@ public class TerminalPanelController extends BaseController {
             terminalConnectionService.initializeAIAdapter();
         }
 
-        // 分栏：Terminal 默认占 76%，Agent 可拖动并记忆。
+        // 分栏：Agent 展开时恢复用户拖动比例；默认收起时终端占满。
         if (terminalSplitPane != null && terminalSplitPane.getDividers() != null
                 && !terminalSplitPane.getDividers().isEmpty()) {
             double saved = LAYOUT_PREFS.getDouble(SPLIT_DIVIDER_KEY, DEFAULT_AGENT_DIVIDER);
             if (saved < MIN_TERMINAL_RATIO || saved > MAX_TERMINAL_RATIO) saved = DEFAULT_AGENT_DIVIDER;
-            boolean agentOpen = LAYOUT_PREFS.getBoolean(AGENT_OPEN_KEY, true);
+            boolean agentOpen = LAYOUT_PREFS.getBoolean(AGENT_OPEN_KEY, false);
             terminalSplitPane.setDividerPositions(agentOpen ? saved : 1.0);
             terminalSplitPane.getDividers().get(0).positionProperty().addListener(
                     (_, _, newVal) -> {
@@ -478,8 +661,9 @@ public class TerminalPanelController extends BaseController {
         // 初始化AI助手服务
         aiHelperService = new com.runzhi.aishell.common.ai.AIHelperService();
 
-        // 添加快捷键支持
+        // 添加快捷键支持；Ctrl+W 与右键菜单的关闭路径统一接入审批守卫
         if (terminalUIService != null) {
+            terminalUIService.setTabCloser(this::closeTab);
             terminalUIService.setupKeyboardShortcuts(terminalTabPane);
         }
         terminalTabPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, event -> {
@@ -487,7 +671,7 @@ public class TerminalPanelController extends BaseController {
                 createNewTab(); event.consume();
             } else if (com.runzhi.aishell.common.config.ShortcutConfigStore.matches("关闭标签", event)) {
                 Tab selected = terminalTabPane.getSelectionModel().getSelectedItem();
-                if (selected != null) terminalTabPane.getTabs().remove(selected);
+                if (selected != null) closeTab(selected);
                 event.consume();
             } else if (com.runzhi.aishell.common.config.ShortcutConfigStore.matches("重新连接", event)) {
                 attemptReconnection(); event.consume();
@@ -509,22 +693,24 @@ public class TerminalPanelController extends BaseController {
      * 设置连接参数监听器
      */
     private void setupConnectionParamsListener() {
-        if (moduleManager != null) {
-            com.runzhi.aishell.common.util.ParameterManager.getInstance().getParameters().addListener((javafx.collections.MapChangeListener<? super String, ? super Object>) change -> {
+        if (moduleManager != null && connectionParamsListener == null) {
+            connectionParamsListener = change -> {
+                if (disposed) return;
                 if (change.getKey().equals("connection_params") && change.wasAdded()) {
                     if (!processingParams.get()) {
                         processingParams.set(true);
                         Platform.runLater(() -> {
                             PauseTransition pause = new PauseTransition(Duration.millis(100));
                             pause.setOnFinished(_ -> {
-                                createNewTerminalTabWithParamsFromManager();
+                                if (!disposed) createNewTerminalTabWithParamsFromManager();
                                 processingParams.set(false);
                             });
                             pause.play();
                         });
                     }
                 }
-            });
+            };
+            com.runzhi.aishell.common.util.ParameterManager.getInstance().getParameters().addListener(connectionParamsListener);
         }
     }
 
@@ -549,6 +735,8 @@ public class TerminalPanelController extends BaseController {
      * 处理 Tab 切换事件
      */
     private void handleTabSwitch(Tab newTab) {
+        applyAgentPlacement();
+        observeSelectedFileArea();
         if (agentWorkspaceController != null) agentWorkspaceController.showTab(newTab);
         if (newTab != null && newTab.getId() != null) {
             com.runzhi.aishell.common.util.ParameterManager.getInstance().put("current_active_tab", newTab.getId(), 5000);
@@ -588,7 +776,7 @@ public class TerminalPanelController extends BaseController {
     }
 
     /**
-     * 创建新的终端标签页
+     * 创建新的终端标签页；取消连接选择时保持已有标签和选中项不变。
      */
     void createNewTerminalTab() {
         ConnectionParams params = com.runzhi.aishell.common.util.ParameterManager.getInstance().get("connection_params", ConnectionParams.class);
@@ -598,13 +786,10 @@ public class TerminalPanelController extends BaseController {
         } else {
             params = terminalConnectionService.showConnectionSelectionDialog();
             if (params != null) {
-                int tabCount = terminalTabPane.getTabs().size() + 1;
-                String tabId = "tab" + tabCount;
+                Tab newTab = createConfiguredTerminalTab(params);
+                String tabId = newTab.getId();
 
                 Parent combinedView = createTerminalAndFileManagerViewForTab(tabId);
-
-                Tab newTab = new Tab(params.getHost() + ":" + params.getPort() + " - Terminal " + tabCount);
-                newTab.setId(tabId);
                 newTab.setContent(combinedView);
 
                 terminalTabPane.getTabs().add(newTab);
@@ -621,8 +806,6 @@ public class TerminalPanelController extends BaseController {
                     });
                     pause.play();
                 });
-            } else {
-                createSimpleTerminalTab();
             }
         }
     }
@@ -631,13 +814,10 @@ public class TerminalPanelController extends BaseController {
      * 创建一个简单的终端标签页
      */
     public void createSimpleTerminalTab() {
-        int tabCount = terminalTabPane.getTabs().size() + 1;
-        String tabId = "tab" + tabCount;
+        Tab newTab = createConfiguredTerminalTab(null);
+        String tabId = newTab.getId();
 
         Parent terminalView = createSimpleTerminalViewForTab();
-
-        Tab newTab = new Tab("Terminal " + tabCount);
-        newTab.setId(tabId);
         newTab.setContent(terminalView);
 
         terminalTabPane.getTabs().add(newTab);
@@ -681,13 +861,10 @@ public class TerminalPanelController extends BaseController {
      * 使用指定的连接参数创建新的终端Tab
      */
     public void createNewTerminalTabWithParams(ConnectionParams params) {
-        int tabCount = terminalTabPane.getTabs().size() + 1;
-        String tabId = "tab" + tabCount;
+        Tab newTab = createConfiguredTerminalTab(params);
+        String tabId = newTab.getId();
 
         Parent combinedView = createTerminalAndFileManagerViewForTab(tabId);
-
-        Tab newTab = new Tab(params.getHost() + ":" + params.getPort() + " - Terminal " + tabCount);
-        newTab.setId(tabId);
         newTab.setContent(combinedView);
 
         terminalTabPane.getTabs().add(newTab);
@@ -773,15 +950,207 @@ public class TerminalPanelController extends BaseController {
         }
     }
 
-    /** Places an approved Agent proposal into the active tab input without executing it. */
-    private void insertCommandIntoTerminal(String command) {
-        Tab selected = terminalTabPane == null ? null : terminalTabPane.getSelectionModel().getSelectedItem();
-        TextField input = selected == null || terminalTabService == null
-                ? null : terminalTabService.getTabToInput().get(selected);
-        if (input == null) return;
+    /**
+     * 把命令填入产生该提议的会话标签输入框（不执行）。
+     * 目标会话不存在或已断开时停止操作并返回 false：
+     * 绝不回退到当前标签（v6：旧审批/提议不得重新路由到别的会话）。
+     */
+    private boolean insertCommandIntoSession(String sessionId, String command) {
+        Tab target = findTabById(sessionId);
+        if (target == null) {
+            log.warn("填入终端失败：目标会话 {} 已不存在", sessionId);
+            return false;
+        }
+        if (!isSessionUsable(target)) {
+            log.warn("填入终端失败：目标会话 {} 的连接已断开", sessionId);
+            return false;
+        }
+        TextField input = terminalTabService == null
+                ? null : terminalTabService.getTabToInput().get(target);
+        if (input == null) {
+            log.warn("填入终端失败：目标会话 {} 无可用输入框", sessionId);
+            return false;
+        }
         input.setText(command);
         input.requestFocus();
         input.positionCaret(input.getLength());
+        return true;
+    }
+
+    /** 本地标签（无连接参数）可用；远程标签要求 SSH 会话仍在线。 */
+    private boolean isSessionUsable(Tab tab) {
+        Object stored = tab.getProperties().get(CONNECTION_PARAMS_KEY);
+        if (!(stored instanceof ConnectionParams)) return true;
+        if (sshService == null) sshService = moduleManager.getSshService();
+        if (sshService == null) return false;
+        var connection = sshService.getTabConnection(tab.getId());
+        return connection != null && connection.isConnected();
+    }
+
+    /** 取消指定会话上正在运行的 Agent 任务；业务侧随后发布 CANCELLED 核销待审批。 */
+    private void cancelSession(String sessionId) {
+        Tab target = findTabById(sessionId);
+        if (target != null && terminalCommandService != null) {
+            terminalCommandService.cancelAIRequest(target);
+        }
+    }
+
+    private Tab findTabById(String tabId) {
+        if (tabId == null || terminalTabPane == null) return null;
+        return terminalTabPane.getTabs().stream()
+                .filter(tab -> tabId.equals(tab.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 全部终端标签（侧栏树判断在线/Agent 归属使用）。 */
+    public java.util.List<Tab> getTerminalTabs() {
+        return terminalTabPane == null ? java.util.List.of()
+                : java.util.List.copyOf(terminalTabPane.getTabs());
+    }
+
+    /** 目标会话的显示标题（不含 Agent 角标），供状态栏审批定位与活动会话卡使用。 */
+    public String tabDisplayFor(String tabId) {
+        Tab tab = findTabById(tabId);
+        if (tab == null) return tabId == null ? "—" : tabId;
+        Object base = tab.getProperties().get(BASE_TITLE_KEY);
+        return base instanceof String baseTitle ? baseTitle : tab.getText();
+    }
+
+    /** 按 id 选中并聚焦终端标签（审批定位入口使用）。 */
+    public void focusTabById(String tabId) {
+        Tab tab = findTabById(tabId);
+        if (tab != null) terminalTabPane.getSelectionModel().select(tab);
+    }
+
+    private static String connectionKeyOf(ConnectionParams params) {
+        if (params == null || params.getHost() == null) return null;
+        return (params.getUsername() == null ? "" : params.getUsername())
+                + '@' + params.getHost() + ':' + params.getPort();
+    }
+
+    /** 找到与该连接对应的已开标签（user@host:port 匹配）；没有返回 null。 */
+    public Tab findTabForConnection(ConnectionParams params) {
+        String key = connectionKeyOf(params);
+        if (key == null || terminalTabPane == null) return null;
+        return terminalTabPane.getTabs().stream()
+                .filter(tab -> {
+                    Object stored = tab.getProperties().get(CONNECTION_PARAMS_KEY);
+                    return stored instanceof ConnectionParams candidate && key.equals(connectionKeyOf(candidate));
+                })
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 激活连接：已开标签则选中聚焦，否则新建标签并连接（供侧栏树双击/Enter 使用）。 */
+    public void activateConnection(ConnectionParams params) {
+        if (params == null) return;
+        Tab existing = findTabForConnection(params);
+        if (existing != null) {
+            terminalTabPane.getSelectionModel().select(existing);
+            return;
+        }
+        createNewTerminalTabWithParams(params);
+    }
+
+    private String nextTabId() {
+        return TabIdentity.nextTabId();
+    }
+
+    private int displayNumberOf(String tabId) {
+        int dash = tabId == null ? -1 : tabId.lastIndexOf('-');
+        try {
+            return dash < 0 ? 0 : Integer.parseInt(tabId.substring(dash + 1));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private String connectionDisplayName(ConnectionParams params) {
+        if (params == null) return "本地终端";
+        String name = (params.getProfileName() != null && !params.getProfileName().isBlank())
+                ? params.getProfileName() : params.getHost() + ":" + params.getPort();
+        return name;
+    }
+
+    private String baseTabTitle(ConnectionParams params, int number) {
+        return connectionDisplayName(params) + " · " + number;
+    }
+
+    /** 在标签上登记连接参数与基础标题，供树激活与 Agent 角标使用。 */
+    private void rememberConnection(Tab tab, ConnectionParams params) {
+        if (params != null) tab.getProperties().put(CONNECTION_PARAMS_KEY, params);
+        tab.getProperties().put(BASE_TITLE_KEY, tab.getText());
+    }
+
+    /**
+     * 统一构造终端标签：稳定身份、连接元数据与关闭保护。
+     * 所有创建入口（带参连接、对话框选择、本地终端）都必须走这里，
+     * 不能再各自用「标签数 + 1」拼 id，否则复用已关闭标签的序号。
+     */
+    Tab createConfiguredTerminalTab(ConnectionParams params) {
+        String tabId = nextTabId();
+        Tab newTab = new Tab(baseTabTitle(params, displayNumberOf(tabId)));
+        newTab.setId(tabId);
+        rememberConnection(newTab, params);
+        protectTabClosure(newTab);
+        return newTab;
+    }
+
+    /**
+     * 挂关闭保护：皮肤层关闭按钮先过审批守卫；
+     * 标签真正移除后清掉 Agent 会话状态，避免旧审批被重新路由到别的标签。
+     */
+    private void protectTabClosure(Tab tab) {
+        if (tab == null) return;
+        tab.setOnCloseRequest(event -> {
+            int pending = AgentSessionTracker.getInstance().pendingApprovals(tab.getId());
+            if (pending > 0) {
+                event.consume();
+                blockedCloseHandler.accept("该标签有 " + pending + " 项 Agent 提议待审批，"
+                        + "请先在 Agent 工作区批准或拒绝，或停止该任务后再关闭。");
+            }
+        });
+        tab.setOnClosed(event -> AgentSessionTracker.getInstance().clear(tab.getId()));
+    }
+
+    /**
+     * 统一的标签关闭入口（Ctrl+W、上下文菜单等编程路径都走这里）：
+     * 有待审批的 Agent 提议时阻止关闭并说明；普通标签正常关闭。
+     *
+     * @return true 表示标签已移除
+     */
+    public boolean closeTab(Tab tab) {
+        if (tab == null || terminalTabPane == null) return false;
+        int pending = AgentSessionTracker.getInstance().pendingApprovals(tab.getId());
+        if (pending > 0) {
+            blockedCloseHandler.accept("该标签有 " + pending + " 项 Agent 提议待审批，"
+                    + "请先在 Agent 工作区批准或拒绝，或停止该任务后再关闭。");
+            return false;
+        }
+        boolean removed = terminalTabPane.getTabs().remove(tab);
+        if (removed) AgentSessionTracker.getInstance().clear(tab.getId());
+        return removed;
+    }
+
+    /** Agent 角标刷新：运行中或待审批的会话标签追加「· Agent」。 */
+    private void refreshAgentBadges() {
+        if (terminalTabPane == null) return;
+        AgentSessionTracker tracker = AgentSessionTracker.getInstance();
+        for (Tab tab : terminalTabPane.getTabs()) {
+            Object base = tab.getProperties().get(BASE_TITLE_KEY);
+            if (!(base instanceof String baseTitle)) continue;
+            boolean active = tracker.isRunning(tab.getId())
+                    || tracker.pendingApprovals(tab.getId()) > 0;
+            tab.setText(active ? baseTitle + " · Agent" : baseTitle);
+        }
+    }
+
+    private void showBlockedCloseDialog(String reason) {
+        Alert alert = new Alert(Alert.AlertType.WARNING, reason, ButtonType.OK);
+        alert.setTitle("无法关闭标签");
+        alert.setHeaderText("Agent 审批进行中");
+        alert.showAndWait();
     }
 
     /**
@@ -822,6 +1191,18 @@ public class TerminalPanelController extends BaseController {
         if (terminalTabPane == null) return null;
         Tab selected = terminalTabPane.getSelectionModel().getSelectedItem();
         return selected == null ? null : getTabId(selected);
+    }
+
+    /**
+     * 当前选中标签绑定的 SSH 连接参数；本地/提示标签返回 null。
+     * 连接尚未注册到 SSHService 时也能从标签元数据取出目标，避免顶栏目标空白或残留上一台主机。
+     */
+    public ConnectionParams getSelectedConnectionParams() {
+        if (terminalTabPane == null) return null;
+        Tab selected = terminalTabPane.getSelectionModel().getSelectedItem();
+        if (selected == null) return null;
+        Object stored = selected.getProperties().get(CONNECTION_PARAMS_KEY);
+        return stored instanceof ConnectionParams params ? params : null;
     }
 
     @FXML
@@ -962,4 +1343,31 @@ public class TerminalPanelController extends BaseController {
             com.runzhi.aishell.common.util.ParameterManager.getInstance().put("show_connection_list", true, 5000);
         }
     }
+    /** Dispose external listeners without rerouting or approving any task. */
+    @Override public void onWindowClosing() {
+        if (disposed) return;
+        disposed = true;
+        fileAreaStateListener = null;
+        if (observedFileAreaBody != null) {
+            observedFileAreaBody.managedProperty().removeListener(fileAreaManagedListener);
+            observedFileAreaBody.visibleProperty().removeListener(fileAreaManagedListener);
+            observedFileAreaBody = null;
+        }
+        if (agentStateSubscription != null) {
+            try { agentStateSubscription.close(); }
+            catch (Exception failure) { log.warn("Unable to release Agent state listener", failure); }
+            agentStateSubscription = null;
+        }
+        if (connectionParamsListener != null) {
+            com.runzhi.aishell.common.util.ParameterManager.getInstance().getParameters().removeListener(connectionParamsListener);
+            connectionParamsListener = null;
+        }
+        if (terminalSplitPane != null && workspaceSceneListener != null) {
+            if (terminalSplitPane.getScene() != null) terminalSplitPane.getScene().widthProperty().removeListener(workspaceWidthListener);
+            terminalSplitPane.sceneProperty().removeListener(workspaceSceneListener);
+            workspaceSceneListener = null;
+        }
+        if (agentWorkspaceController != null) agentWorkspaceController.onWindowClosing();
+    }
+
 }

@@ -51,7 +51,7 @@ public class ViewSwitcher {
      */
     public Parent switchTo(String fxmlPath, String styleClass) {
         try {
-            Parent view = moduleManager.getNavigationManager().loadPage(fxmlPath);
+            Parent view = moduleManager.getNavigationManager().loadPageForContainer(fxmlPath, contentArea);
             replaceContent(view, styleClass);
             return view;
         } catch (IOException e) {
@@ -73,7 +73,7 @@ public class ViewSwitcher {
     public <T> Parent switchTo(String fxmlPath, String styleClass, 
                                Class<T> controllerClass, Consumer<T> configurator) {
         try {
-            Parent view = moduleManager.getNavigationManager().loadPage(fxmlPath);
+            Parent view = moduleManager.getNavigationManager().loadPageForContainer(fxmlPath, contentArea);
             
             Object controller = moduleManager.getNavigationManager().getController(fxmlPath);
             if (controllerClass.isInstance(controller)) {
@@ -137,8 +137,9 @@ public class ViewSwitcher {
             return;
         }
 
-        contentArea.getChildren().clear();
-        contentArea.getChildren().add(content);
+        if (contentArea.getChildren().size() != 1 || contentArea.getChildren().getFirst() != content) {
+            contentArea.getChildren().setAll(content);
+        }
 
         // 设置内容自适应
         if (content instanceof Region) {

@@ -30,19 +30,27 @@ public final class AgentApprovalGate {
      *         (Agent task cancelled) before a decision arrived.
      */
     public static boolean request(String sessionId, CommandRisk risk, String summary) {
+        return request(sessionId,risk,summary,new AgentProposal.Context("default","—",sessionId,"—",summary),()->true);
+    }
+
+    public static boolean request(String sessionId, CommandRisk risk, String summary, AgentProposal.Context context,
+                                  java.util.function.BooleanSupplier valid) {
         if (risk == null) risk = CommandRisk.MEDIUM;
+        context=new AgentProposal.Context(context.task(),context.user(),context.host(),context.directory(),context.impact(),risk);
         CompletableFuture<Boolean> decision = new CompletableFuture<>();
-        AgentActivityBus.publishApproval(sessionId, "[" + risk.label() + "] " + summary, approved -> {
+        AgentProposal proposal = AgentActivityBus.publishApproval(sessionId, "[" + risk.label() + "] " + summary, context, valid, approved -> {
             if (!decision.isDone()) decision.complete(Boolean.TRUE.equals(approved));
         });
         try {
             return decision.get(DECISION_TIMEOUT_MINUTES, TimeUnit.MINUTES);
         } catch (TimeoutException timeout) {
+            proposal.expire();
             AgentAuditLogger.getInstance().record("approval_timeout", sessionId, risk, summary, "timeout");
             return false;
         } catch (ExecutionException execution) {
             return false;
         } catch (InterruptedException interrupted) {
+            proposal.invalidate();
             Thread.currentThread().interrupt();
             throw new java.util.concurrent.CancellationException("Agent cancelled while waiting for approval");
         }

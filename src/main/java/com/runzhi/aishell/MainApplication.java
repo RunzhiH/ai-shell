@@ -38,7 +38,7 @@ public class MainApplication extends Application {
             String[] sheets = themeManager.getStylesheetsFor(themeManager.getCurrentTheme());
             if (sheets != null && sheets.length > 0) {
                 for (String sheet : sheets) {
-                    if (sheet != null) {
+                    if (sheet != null && !scene.getStylesheets().contains(sheet)) {
                         scene.getStylesheets().add(sheet);
                     }
                 }
@@ -70,7 +70,8 @@ public class MainApplication extends Application {
 
     @Override
     public void stop() {
-        shutdownServices();
+        try { AIShellModuleManager.getInstance().getNavigationManager().clearCache(); }
+        finally { shutdownServices(); }
     }
 
     /**

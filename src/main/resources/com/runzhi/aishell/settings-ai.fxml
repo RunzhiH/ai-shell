@@ -25,6 +25,11 @@
                 <ComboBox fx:id="configProfileCombo" prefWidth="300" editable="true"
                           promptText="选择配置，或输入新配置名称"/>
             </HBox>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="默认 AI 配置:" prefWidth="120"/>
+                <Label fx:id="defaultConfigLabel" text="—" styleClass="text-secondary"/>
+            </HBox>
             
             <!-- API 提供商 -->
             <HBox alignment="CENTER_LEFT" spacing="10">

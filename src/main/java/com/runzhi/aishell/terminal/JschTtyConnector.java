@@ -8,33 +8,57 @@ package com.runzhi.aishell.terminal;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
+import com.runzhi.aishell.terminal.zmodem.ZModemInterceptor;
+import com.runzhi.aishell.terminal.zmodem.ZModemStream;
+import com.runzhi.aishell.terminal.zmodem.ZModemSupport;
 import com.techsenger.jeditermfx.core.Questioner;
 import com.techsenger.jeditermfx.core.TtyConnector;
 import com.techsenger.jeditermfx.core.util.TermSize;
 
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.Reader;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
 
-/** Bridges a connected JSch session to JediTermFX without interpreting terminal bytes. */
+/**
+ * Bridges a connected JSch session to JediTermFX.
+ * <p>
+ * 终端字节按 UTF-8 增量解码后交给终端控件；解码前先经过 ZMODEM 拦截器，
+ * 命中帧前导时由协议引擎接管字节流完成文件传输（对端 sz 则接收、rz 则发送）。
+ */
 public final class JschTtyConnector implements TtyConnector {
     private final String name;
     private final ChannelShell channel;
-    private final Reader reader;
     private final OutputStream writer;
+    private final ZModemStream raw;
+    private final ZModemInterceptor zmodem;
     private final Consumer<String> directoryListener;
+    private final CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE);
+    private final byte[] rawBuffer = new byte[8192];
+    private int rawLength;
+    private int rawPosition;
     private final StringBuilder oscBuffer = new StringBuilder();
     private int escapeState;
 
     public JschTtyConnector(Session session, String name) throws JSchException, IOException {
-        this(session, name, null);
+        this(session, name, null, null);
     }
 
     public JschTtyConnector(Session session, String name, Consumer<String> directoryListener)
             throws JSchException, IOException {
+        this(session, name, directoryListener, null);
+    }
+
+    public JschTtyConnector(Session session, String name, Consumer<String> directoryListener,
+                            ZModemSupport zmodemSupport) throws JSchException, IOException {
         if (session == null || !session.isConnected()) {
             throw new IllegalStateException("SSH session is not connected");
         }
@@ -43,18 +67,71 @@ public final class JschTtyConnector implements TtyConnector {
         this.channel = (ChannelShell) session.openChannel("shell");
         channel.setPty(true);
         channel.setPtyType("xterm-256color", 120, 36, 0, 0);
-        this.reader = new InputStreamReader(channel.getInputStream(), StandardCharsets.UTF_8);
         this.writer = channel.getOutputStream();
+        this.raw = new ZModemStream(channel.getInputStream());
+        this.zmodem = new ZModemInterceptor(raw, writer, zmodemSupport);
         channel.connect(15_000);
     }
 
     @Override
     public int read(char[] buffer, int offset, int length) throws IOException {
-        int count = reader.read(buffer, offset, length);
-        if (count > 0 && directoryListener != null) {
-            inspectTerminalMetadata(buffer, offset, count);
+        if (length == 0) {
+            return 0;
         }
-        return count;
+        while (true) {
+            if (rawPosition < rawLength) {
+                ByteBuffer bytes = ByteBuffer.wrap(rawBuffer, rawPosition, rawLength - rawPosition);
+                CharBuffer chars = CharBuffer.wrap(buffer, offset, length);
+                CoderResult result = decoder.decode(bytes, chars, false);
+                rawPosition = bytes.position();
+                int produced = chars.position() - offset;
+                if (produced > 0) {
+                    if (directoryListener != null) {
+                        inspectTerminalMetadata(buffer, offset, produced);
+                    }
+                    return produced;
+                }
+                if (result.isError()) {
+                    continue;
+                }
+                // 缓冲里只剩不完整的多字节序列：补充更多字节
+                int remaining = rawLength - rawPosition;
+                if (remaining > 0) {
+                    System.arraycopy(rawBuffer, rawPosition, rawBuffer, 0, remaining);
+                }
+                rawLength = remaining;
+                rawPosition = 0;
+            } else {
+                rawLength = 0;
+                rawPosition = 0;
+            }
+
+            while (rawLength < rawBuffer.length) {
+                int b = raw.read();
+                if (b < 0) {
+                    if (rawLength == 0) {
+                        return -1;
+                    }
+                    break;
+                }
+                if (zmodem.onRawByte(b)) {
+                    // 本次 ZMODEM 会话已结束（字节被协议引擎消费），继续读终端数据
+                    continue;
+                }
+                rawBuffer[rawLength++] = (byte) b;
+                if (raw.available() == 0) {
+                    break;   // 已有数据先交给终端，避免攒包
+                }
+            }
+            if (rawLength == 0) {
+                continue;
+            }
+        }
+    }
+
+    /** ZMODEM 传输进行中（界面可据此显示状态）。 */
+    public ZModemInterceptor zmodemInterceptor() {
+        return zmodem;
     }
 
     private void inspectTerminalMetadata(char[] buffer, int offset, int count) {
@@ -103,6 +180,9 @@ public final class JschTtyConnector implements TtyConnector {
 
     @Override
     public void write(byte[] bytes) throws IOException {
+        if (zmodem.isTransferring()) {
+            return;   // 传输期间的按键不能混入协议字节流
+        }
         writer.write(bytes);
         writer.flush();
     }
@@ -134,7 +214,7 @@ public final class JschTtyConnector implements TtyConnector {
 
     @Override
     public boolean ready() throws IOException {
-        return reader.ready();
+        return raw.available() > 0;
     }
 
     @Override
@@ -144,6 +224,7 @@ public final class JschTtyConnector implements TtyConnector {
 
     @Override
     public void close() {
+        zmodem.cancel();
         channel.disconnect();
     }
 

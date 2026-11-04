@@ -49,34 +49,6 @@ public class TerminalTabController {
     @FXML
     private Button reconnectButton;
 
-    // 获取连接信息栏
-    @FXML
-    private HBox connectionInfoBar;
-
-    // 获取连接状态标签
-    @FXML
-    private Label connectionStatusLabel;
-
-    // 获取连接状态提示
-    @FXML
-    private Tooltip connectionStatusTooltip;
-
-    // 获取连接主机标签
-    @FXML
-    private Label connectionHostLabel;
-
-    // 获取连接主机提示
-    @FXML
-    private Tooltip hostTooltip;
-
-    // 获取连接用户标签
-    @FXML
-    private Label connectionUserLabel;
-
-    // 获取连接用户提示
-    @FXML
-    private Tooltip userTooltip;
-
     // 用于与TerminalPanelController通信的引用
     private TerminalPanelController terminalPanelController;
     private Tab parentTab;
@@ -89,76 +61,16 @@ public class TerminalTabController {
         this.parentTab = tab;
         this.tabId = tabId;
         this.sshService = sshService;
-        
-        // 初始化连接信息栏
-        initializeConnectionInfoBar();
     }
-    
-    /**
-     * 初始化连接信息栏
-     */
-    private void initializeConnectionInfoBar() {
-        if (connectionInfoBar != null && sshService != null && tabId != null) {
-            var connection = sshService.getTabConnection(tabId);
-            if (connection != null) {
-                updateConnectionInfoBar(connection);
-            }
-        }
-    }
-    
+
     /**
      * 更新连接信息栏显示（连接建立/重连成功后由连接服务调用）。
+     * v6 已移除 tab 下方的连接信息栏：连接目标由标签标题表达，
+     * 连接状态由底栏健康指示表达，重连由终端工具栏保留。
+     * 方法签名保留给连接服务调用方，不再更新任何 UI。
      */
     public void updateConnectionInfoBar(com.runzhi.aishell.ssh.SSHConnectionManager connection) {
-        if (connectionInfoBar == null || connectionStatusLabel == null || 
-            connectionHostLabel == null || connectionUserLabel == null) {
-            return;
-        }
-        
-        javafx.application.Platform.runLater(() -> {
-            // 显示连接信息栏
-            connectionInfoBar.setVisible(true);
-            connectionInfoBar.setManaged(true);
-            
-            // 更新状态指示器
-            boolean isConnected = connection.isConnected();
-            connectionStatusLabel.setText(isConnected ? "●" : "○");
-            connectionStatusLabel.setTextFill(isConnected ? 
-                javafx.scene.paint.Color.web("#4ec9b0") : 
-                javafx.scene.paint.Color.web("#f44336"));
-            
-            if (connectionStatusTooltip != null) {
-                connectionStatusTooltip.setText(isConnected ? "已连接" : "已断开");
-            }
-            
-            // 更新主机信息
-            String hostInfo = connection.getHost() + ":" + connection.getPort();
-            connectionHostLabel.setText(hostInfo);
-            if (hostTooltip != null) {
-                hostTooltip.setText("主机：" + hostInfo);
-            }
-            
-            // 更新用户信息
-            String userInfo = connection.getUsername();
-            connectionUserLabel.setText(userInfo);
-            if (userTooltip != null) {
-                userTooltip.setText("用户：" + userInfo);
-            }
-            
-            log.debug("Connection info bar updated: {}, User: {}, Connected: {}", hostInfo, userInfo, isConnected);
-        });
-    }
-    
-    /**
-     * 隐藏连接信息栏
-     */
-    private void hideConnectionInfoBar() {
-        if (connectionInfoBar != null) {
-            javafx.application.Platform.runLater(() -> {
-                connectionInfoBar.setVisible(false);
-                connectionInfoBar.setManaged(false);
-            });
-        }
+        // v6 布局下无信息栏；保留空实现避免连接服务调用方改动
     }
     
     // 执行当前命令 - 供 FXML 调用
@@ -336,10 +248,7 @@ public class TerminalTabController {
         copySelected.setOnAction(e -> {
             String selectedText = terminalOutput.getSelectedText();
             if (selectedText != null && !selectedText.isEmpty()) {
-                javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
-                javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-                content.putString(selectedText);
-                clipboard.setContent(content);
+                com.runzhi.aishell.common.util.ClipboardUtils.copyText(selectedText);
             }
         });
         contextMenu.getItems().add(copySelected);
@@ -378,10 +287,7 @@ public class TerminalTabController {
         copyCurrentLine.setOnAction(e -> {
             String currentLine = getCurrentLineText();
             if (currentLine != null && !currentLine.isEmpty()) {
-                javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
-                javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-                content.putString(currentLine);
-                clipboard.setContent(content);
+                com.runzhi.aishell.common.util.ClipboardUtils.copyText(currentLine);
             }
         });
         contextMenu.getItems().add(copyCurrentLine);
@@ -470,10 +376,7 @@ public class TerminalTabController {
                     // Ctrl+C：有选中文本则复制；无选中时向远端发送中断信号 ETX（此前只注释承诺未实现，2026-10-23 审计 P1-19）
                     String selectedText = terminalOutput.getSelectedText();
                     if (selectedText != null && !selectedText.isEmpty()) {
-                        javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
-                        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-                        content.putString(selectedText);
-                        clipboard.setContent(content);
+                        com.runzhi.aishell.common.util.ClipboardUtils.copyText(selectedText);
                     } else {
                         sendControlCharacter('\u0003');
                     }

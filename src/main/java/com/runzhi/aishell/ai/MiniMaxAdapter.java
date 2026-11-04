@@ -29,7 +29,7 @@ public class MiniMaxAdapter extends BaseAIAdapter implements StreamingAIAdapter 
             return "Error: MiniMax adapter not configured. Please set API key and group ID.";
         }
 
-        JsonObject body = createMessageRequestBody(query, currentTemperature(), currentMaxTokens());
+        JsonObject body = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
         body.addProperty("group_id", groupId);
         Map<String, String> headers = Map.of("Content-Type", "application/json", "Authorization", "Bearer " + apiKey);
         return executeJsonRequest("MiniMax", () -> HttpClientUtil.doPost(baseUrl, body, headers), this::extractOpenAICompatible);
@@ -44,7 +44,7 @@ public class MiniMaxAdapter extends BaseAIAdapter implements StreamingAIAdapter 
     public void streamQuery(String query, Consumer<String> delta, BooleanSupplier cancelled) throws Exception {
         // 与非流式 sendQuery 一致：未配置时直接拒绝，避免发出 “Authorization: Bearer null”（2026-10-23 审计 P1-8）
         if (!isConfigured()) throw new IllegalStateException(getName() + " 未配置 API Key，无法发起流式请求");
-        JsonObject body = createMessageRequestBody(query, currentTemperature(), currentMaxTokens());
+        JsonObject body = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
         body.addProperty("group_id", groupId);
         streamChatCompletions(body, Map.of("Content-Type", "application/json",
                 "Authorization", "Bearer " + apiKey), delta, cancelled);
