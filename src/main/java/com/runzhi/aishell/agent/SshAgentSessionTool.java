@@ -26,6 +26,21 @@ public final class SshAgentSessionTool implements AgentSessionTool {
         return connection != null && connection.isConnected();
     }
 
+    @Override public java.util.function.BooleanSupplier approvalTarget(String id) {
+        var connection=sshService.getTabConnection(id);
+        var session=connection==null?null:connection.getSession();
+        String directory=sshService.getCurrentWorkingDirectoryForTab(id);
+        return ()->connection!=null && session!=null && connection.isConnected()
+                && connection.getSession()==session && sshService.getTabConnection(id)==connection
+                && java.util.Objects.equals(directory,sshService.getCurrentWorkingDirectoryForTab(id));
+    }
+
+    @Override public AgentProposal.Context approvalContext(String id,String impact) {
+        var params=sshService.getTabConnectionParams(id);
+        return new AgentProposal.Context(id,params==null?"—":params.getUsername(),
+                params==null?id:params.getHost()+":"+params.getPort(),workingDirectory(id),impact);
+    }
+
     @Override
     public String workingDirectory(String sessionId) {
         requireConnected(sessionId);

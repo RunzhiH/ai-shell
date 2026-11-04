@@ -74,8 +74,8 @@ public class ERNIEBotAdapter extends BaseAIAdapter implements StreamingAIAdapter
 
         try {
             // 创建请求体：用户在设置页配置的参数（2026-10-23 审计 P1-8）
-            JsonObject requestBody = createMessageRequestBody(query, currentTemperature(), currentMaxTokens());
-            requestBody.addProperty("max_output_tokens", currentMaxTokens());
+            JsonObject requestBody = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
+            requestBody.addProperty("max_output_tokens", effectiveMaxTokens());
 
             // 设置请求头
             Map<String, String> headers = new HashMap<>();
@@ -122,7 +122,7 @@ public class ERNIEBotAdapter extends BaseAIAdapter implements StreamingAIAdapter
         // 与非流式 sendQuery 一致：未配置时直接拒绝，避免发出 “Authorization: Bearer null”（2026-10-23 审计 P1-8）
         if (!isConfigured()) throw new IllegalStateException(getName() + " 未配置 API Key，无法发起流式请求");
         String token = getAccessToken();
-        JsonObject body = createMessageRequestBody(query, currentTemperature(), currentMaxTokens());
+        JsonObject body = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
         body.addProperty("stream", true);
         String url = baseUrl + model + "?access_token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
         HttpRequest request = HttpRequest.newBuilder(java.net.URI.create(url))

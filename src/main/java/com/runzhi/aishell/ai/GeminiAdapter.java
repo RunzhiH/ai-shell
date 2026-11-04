@@ -60,8 +60,8 @@ public class GeminiAdapter extends BaseAIAdapter implements StreamingAIAdapter {
             // 添加生成参数
             JsonObject generationConfig = new JsonObject();
             generationConfig.addProperty("temperature", currentTemperature());
-            generationConfig.addProperty("topP", AppConstants.DEFAULT_TOP_P);
-            generationConfig.addProperty("maxOutputTokens", AppConstants.DEFAULT_MAX_TOKENS);
+            generationConfig.addProperty("topP", currentTopP());
+            generationConfig.addProperty("maxOutputTokens", effectiveMaxTokens());
             requestBody.add("generationConfig", generationConfig);
 
             // 设置请求头

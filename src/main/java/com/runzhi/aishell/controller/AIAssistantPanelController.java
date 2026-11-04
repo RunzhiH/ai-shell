@@ -5,17 +5,17 @@
 
 package com.runzhi.aishell.controller;
 
+import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.ai.AIAdapter;
 import com.runzhi.aishell.ai.AIConfig;
 import com.runzhi.aishell.ai.AIConfigManager;
 import com.runzhi.aishell.ai.AIService;
 import com.runzhi.aishell.agent.CommandRiskAssessor;
+import com.runzhi.aishell.common.util.ClipboardUtils;
 import com.runzhi.aishell.common.util.DialogUtils;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.geometry.Insets;
 import javafx.scene.control.*;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.TextFlow;
@@ -37,11 +37,18 @@ public class AIAssistantPanelController extends BaseController
     @FXML
     private ChoiceBox<String> providerChoice;
     @FXML
-    private ChoiceBox<String> modelChoice;
+    private ChoiceBox<AIConfig> modelChoice;
 
+    @FXML private ScrollPane assistantScroll;
+    @FXML private Button refreshModelsButton;
+    @FXML private Button configureAIButton;
+    /** Programmatic picker synchronization must not trigger configuration writes. */
+    private boolean updatingModels;
+    private volatile boolean disposed;
+    /** Invalidates callbacks already queued on the FX thread when a request loses ownership. */
+    private final java.util.concurrent.atomic.AtomicLong requestGeneration = new java.util.concurrent.atomic.AtomicLong();
     private AIAdapter aiAdapter;
     private AIService aiService;
-    private com.runzhi.aishell.common.ai.AIHelperService aiHelperService;
     private final com.runzhi.aishell.ai.stream.AIStreamingExecutor streamingExecutor =
             new com.runzhi.aishell.ai.stream.AIStreamingExecutor();
     private volatile com.runzhi.aishell.ai.stream.AIRequestHandle activeRequest;
@@ -61,8 +68,6 @@ public class AIAssistantPanelController extends BaseController
         
         // AIAssistantPanelController特有的初始化
         initializeAIAdapterIfNeeded();
-        // 初始化AI助手服务
-        aiHelperService = new com.runzhi.aishell.common.ai.AIHelperService();
         // 填充供应商/模型切换器（面板入口就地切换，不必再开配置对话框）
         refreshModelList();
     }
@@ -70,111 +75,61 @@ public class AIAssistantPanelController extends BaseController
     /** 刷新供应商与模型下拉列表，并定位到当前配置 */
     @FXML
     private void refreshModelList() {
-        if (providerChoice == null || modelChoice == null) {
-            return;
-        }
-        AIConfigManager configManager = AIConfigManager.getInstance();
-        List<AIConfig> configs = configManager.getAllConfigs();
-
-        // 供应商 = 去重后的配置名（一个供应商名下可能有多个模型配置）
-        providerChoice.getItems().clear();
-        modelChoice.getItems().clear();
-        java.util.Set<String> seenProviders = new java.util.LinkedHashSet<>();
-        for (AIConfig config : configs) {
-            if (config.getName() != null) {
-                seenProviders.add(config.getName());
-            }
-        }
-        providerChoice.getItems().addAll(seenProviders);
-
-        // 模型列表显示 "配置名 · 模型"，便于区分同供应商不同模型
-        for (AIConfig config : configs) {
-            if (config.getModel() != null) {
-                modelChoice.getItems().add(config.getModel());
-            }
-        }
-
-        // 定位到当前配置
-        AIConfig current = configManager.getCurrentConfig();
-        if (current != null) {
-            if (current.getName() != null) {
-                providerChoice.setValue(current.getName());
-            }
-            if (current.getModel() != null) {
-                modelChoice.setValue(current.getModel());
-            }
-        }
+        AIConfigManager manager = AIConfigManager.getInstance();
+        populateModels(manager.getAllConfigs(), manager.getCurrentConfig());
     }
 
-    /** 供应商切换：定位到该供应商下第一个配置 */
+    /** Render configurations by identity; refreshing must not switch the live configuration. */
+    void populateModels(List<AIConfig> configs, AIConfig current) {
+        if (providerChoice == null || modelChoice == null) return;
+        updatingModels = true;
+        try {
+            modelChoice.setConverter(new javafx.util.StringConverter<>() {
+                @Override public String toString(AIConfig config) {
+                    return config == null ? "" : config.getName() + " · "
+                            + (config.getModel() == null ? "" : config.getModel());
+                }
+                @Override public AIConfig fromString(String value) { return null; }
+            });
+            providerChoice.getItems().setAll(configs.stream().map(AIConfig::getName)
+                    .filter(java.util.Objects::nonNull).distinct().toList());
+            modelChoice.getItems().setAll(configs);
+            Tooltip profileInfo = new Tooltip();
+            profileInfo.textProperty().bind(providerChoice.valueProperty());
+            providerChoice.setTooltip(profileInfo);
+            Tooltip modelInfo = new Tooltip();
+            modelInfo.textProperty().bind(javafx.beans.binding.Bindings.createStringBinding(
+                    () -> modelChoice.getConverter().toString(modelChoice.getValue()), modelChoice.valueProperty()));
+            modelChoice.setTooltip(modelInfo);
+            providerChoice.setValue(current == null ? null : current.getName());
+            modelChoice.setValue(current);
+        } finally { updatingModels = false; }
+    }
+
     @FXML
     private void switchProvider() {
-        if (providerChoice == null) return;
+        if (updatingModels || disposed || providerChoice == null) return;
         String selected = providerChoice.getValue();
         if (selected == null) return;
-
-        AIConfigManager configManager = AIConfigManager.getInstance();
-        AIConfig target = null;
-        for (AIConfig config : configManager.getAllConfigs()) {
-            if (selected.equals(config.getName())) {
-                target = config;
-                break;
-            }
-        }
-        if (target == null) {
-            appendToTerminal("未找到供应商配置: " + selected + "\n", "#ff9900");
-            return;
-        }
-        applyConfigChange(target);
+        AIConfig target = modelChoice.getItems().stream()
+                .filter(config -> selected.equals(config.getName())).findFirst().orElse(null);
+        if (target != null) applyConfigChange(target);
     }
 
-    /** 模型切换：按模型名找到对应配置并切换 */
     @FXML
     private void switchModel() {
-        if (modelChoice == null) return;
-        String selected = modelChoice.getValue();
-        if (selected == null) return;
-
-        AIConfigManager configManager = AIConfigManager.getInstance();
-        AIConfig target = null;
-        // 优先匹配当前供应商下的模型，其次全局匹配
-        String currentProvider = providerChoice != null ? providerChoice.getValue() : null;
-        if (currentProvider != null) {
-            for (AIConfig config : configManager.getAllConfigs()) {
-                if (currentProvider.equals(config.getName()) && selected.equals(config.getModel())) {
-                    target = config;
-                    break;
-                }
-            }
-        }
-        if (target == null) {
-            for (AIConfig config : configManager.getAllConfigs()) {
-                if (selected.equals(config.getModel())) {
-                    target = config;
-                    break;
-                }
-            }
-        }
-        if (target == null) {
-            appendToTerminal("未找到模型配置: " + selected + "\n", "#ff9900");
-            return;
-        }
-        applyConfigChange(target);
+        if (updatingModels || disposed || modelChoice == null) return;
+        AIConfig target = modelChoice.getValue();
+        if (target != null) applyConfigChange(target);
     }
 
-    /** 应用配置切换：更新 ConfigManager、AI 服务与本地适配器引用 */
-    private void applyConfigChange(AIConfig target) {
-        AIConfigManager configManager = AIConfigManager.getInstance();
-        configManager.setCurrentConfig(target.getName());
-        if (aiService != null) {
-            aiService.switchToConfig(target.getName());
-        }
-        aiAdapter = configManager.getCurrentAIAdapter();
-        // 同步两个下拉的显示，避免出现不一致
-        if (providerChoice != null) providerChoice.setValue(target.getName());
-        if (modelChoice != null) modelChoice.setValue(target.getModel());
-        appendToTerminal("已切换模型：" + target.getName() + " · "
-                + (target.getModel() == null ? "" : target.getModel()) + "\n", "#56d364");
+    /** Switch the selected configuration, never infer identity from a possibly duplicated model name. */
+    void applyConfigChange(AIConfig target) {
+        AIConfigManager manager = AIConfigManager.getInstance();
+        manager.setCurrentConfig(target.getName());
+        if (aiService != null) aiService.switchToConfig(target.getName());
+        aiAdapter = manager.getCurrentAIAdapter();
+        populateModels(manager.getAllConfigs(), target);
     }
 
     private void initializeAIAdapterIfNeeded() {
@@ -186,7 +141,7 @@ public class AIAssistantPanelController extends BaseController
 
         if (aiAdapter == null) {
             // 如果没有配置，尝试使用默认配置
-            AIConfigManager.getInstance().setCurrentConfig("默认OpenAI");
+            AIConfigManager.getInstance().useFallbackConfig("默认OpenAI");
             aiAdapter = AIConfigManager.getInstance().getCurrentAIAdapter();
         }
     }
@@ -198,256 +153,64 @@ public class AIAssistantPanelController extends BaseController
             AIAdapter configured = AIConfigManager.getInstance().getCurrentAIAdapter();
             if (configured != null) aiAdapter = configured;
             if (aiAdapter == null || !aiAdapter.isConfigured()) {
-                appendToTerminal("AI错误: 请先配置可用的 AI 服务\n", "#ff0000");
+                appendToTerminal(I18n.tr("assistant.notConfigured") + "\n", "#ff0000");
                 return;
             }
-            // 显示用户输入
-            appendToTerminal("用户: " + command + "\n", "#E6EDF3");
-
-            cancelActiveRequest();
-            setRequestRunning(true);
-            // 累积完整回复，完成后用于提取 shell 命令渲染 Command Card（§18）
-            StringBuilder fullResponse = new StringBuilder();
-            activeRequest = streamingExecutor.submit(aiAdapter, command, event -> Platform.runLater(() -> {
-                switch (event.type()) {
-                    // AI 身份标识用紫色（-fx-ai-color），普通正文用 Text Primary（§24）
-                    case STARTED -> appendToTerminal("AI: ", "#A371F7");
-                    case DELTA -> {
-                        fullResponse.append(event.text());
-                        appendToTerminal(event.text(), "#E6EDF3");
-                    }
-                    case COMPLETED -> {
-                        appendToTerminal("\n", "#E6EDF3");
-                        // 提取回复中的 shell 命令并渲染为可操作卡片
-                        String extracted = extractShellCommand(fullResponse.toString());
-                        if (extracted != null) {
-                            appendCommandCard(extracted);
-                        }
-                        setRequestRunning(false);
-                    }
-                    case CANCELLED -> {
-                        appendToTerminal("[已停止]\n", "#D29922");
-                        setRequestRunning(false);
-                    }
-                    case ERROR -> {
-                        appendToTerminal("AI错误: " + event.text() + "\n", "#F85149");
-                        setRequestRunning(false);
-                    }
-                }
-            }));
-
+            startRequest(command, aiAdapter);
             commandInput.clear();
         }
     }
 
+    /** Each request owns its callbacks; cancellation and clearing invalidate all queued events. */
+    void startRequest(String command, AIAdapter adapter) {
+        if (disposed) return;
+        if (adapter == null || command == null || command.isBlank())
+            throw new IllegalArgumentException("A configured adapter and nonempty prompt are required");
+        cancelActiveRequest();
+        long generation = requestGeneration.get();
+        appendToTerminal(I18n.tr("assistant.user", command) + "\n", "#E6EDF3");
+        setRequestRunning(true);
+        StringBuilder fullResponse = new StringBuilder();
+        activeRequest = streamingExecutor.submit(adapter, command, event -> Platform.runLater(() -> {
+            if (disposed || generation != requestGeneration.get()) return;
+            switch (event.type()) {
+                case STARTED -> appendToTerminal("AI: ", "#A371F7");
+                case DELTA -> { fullResponse.append(event.text()); appendToTerminal(event.text(), "#E6EDF3"); }
+                case COMPLETED -> {
+                    appendToTerminal("\n", "#E6EDF3");
+                    String commandText = extractShellCommand(fullResponse.toString());
+                    if (commandText != null) appendCommandCard(commandText);
+                    setRequestRunning(false);
+                }
+                case CANCELLED -> { appendToTerminal(I18n.tr("assistant.stopped") + "\n", "#D29922"); setRequestRunning(false); }
+                case ERROR -> { appendToTerminal(I18n.tr("assistant.error", event.text()) + "\n", "#F85149"); setRequestRunning(false); }
+            }
+        }));
+    }
+
     @FXML
     private void openAIConfiguration() {
-        // 创建配置对话框
-        Dialog<String> dialog = new Dialog<>();
-        dialog.setTitle("AI配置");
-        dialog.setHeaderText("配置AI服务");
-
-        // 设置按钮类型
-        ButtonType saveButtonType = new ButtonType("保存", ButtonType.OK.getButtonData());
-        ButtonType cancelButtonType = new ButtonType("取消", ButtonType.CANCEL.getButtonData());
-        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, cancelButtonType);
-
-        // 创建输入字段
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        // AI服务选择 - 包含所有支持的AI服务
-        ChoiceBox<String> aiServiceChoice = new ChoiceBox<>();
-        aiServiceChoice.getItems().addAll(
-                "OpenAI",
-                "Claude",
-                "Ollama",
-                "Gemini",
-                "Qwen",
-                "ERNIE Bot",
-                "Zhipu",
-                "Moonshot",
-                "MiniMax",
-                "Mistral",
-                "DeepSeek",
-                "Xiaomimimo"
-        );
-        aiServiceChoice.setValue("OpenAI");
-
-        // 配置名称
-        TextField configNameField = new TextField();
-        configNameField.setPromptText("配置名称");
-
-        // API密钥
-        TextField apiKeyField = new TextField();
-        apiKeyField.setPromptText("输入API密钥");
-
-        // 模型选择
-        TextField modelField = new TextField();
-        modelField.setPromptText("模型名称");
-
-        // 基础URL
-        TextField baseUrlField = new TextField();
-        baseUrlField.setPromptText("基础URL");
-
-        // AI配置管理器
-        AIConfigManager configManager = AIConfigManager.getInstance();
-
-        // 添加配置切换功能
-        ChoiceBox<String> configChoice = new ChoiceBox<>();
-        List<AIConfig> allConfigs = configManager.getAllConfigs();
-        for (AIConfig config : allConfigs) {
-            configChoice.getItems().add(config.getName());
-        }
-
-        // 当前配置
-        AIConfig currentConfig = configManager.getCurrentConfig();
-        if (currentConfig != null) {
-            configChoice.setValue(currentConfig.getName());
-        }
-
-        // 添加配置选择事件监听
-        configChoice.setOnAction(e -> {
-            String selectedConfigName = configChoice.getValue();
-            if (selectedConfigName != null) {
-                AIConfig selectedConfig = configManager.getConfigByName(selectedConfigName);
-                if (selectedConfig != null) {
-                    configManager.setCurrentConfig(selectedConfigName);
-                    aiAdapter = configManager.getCurrentAIAdapter();
-                    aiService.switchToConfig(selectedConfigName);
-                    // 更新界面字段
-                    configNameField.setText(selectedConfig.getName());
-                    aiServiceChoice.setValue(selectedConfig.getType());
-                    apiKeyField.setText(selectedConfig.getApiKey());
-                    modelField.setText(selectedConfig.getModel());
-                    baseUrlField.setText(selectedConfig.getBaseUrl());
-                }
-            }
-        });
-
-        // 添加AI服务类型选择事件监听
-        aiServiceChoice.setOnAction(e -> {
-            String selectedType = aiServiceChoice.getValue();
-            if ("OpenAI".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.openai.com/v1/chat/completions");
-                modelField.setPromptText("gpt-3.5-turbo");
-                apiKeyField.setPromptText("sk-... 开头的API密钥");
-            } else if ("Claude".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.anthropic.com/v1/messages");
-                modelField.setPromptText("claude-3-sonnet-20240229");
-                apiKeyField.setPromptText("sk-ant-... 开头的API密钥");
-            } else if ("Ollama".equals(selectedType)) {
-                baseUrlField.setPromptText("http://localhost:11434/api/generate");
-                modelField.setPromptText("llama2");
-                apiKeyField.setPromptText("(可选)认证密钥");
-            } else if ("Gemini".equals(selectedType)) {
-                baseUrlField.setPromptText("https://generativelanguage.googleapis.com/v1beta/models/");
-                modelField.setPromptText("gemini-pro");
-                apiKeyField.setPromptText("AIza... 开头的API密钥");
-            } else if ("Qwen".equals(selectedType)) {
-                baseUrlField.setPromptText("https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation");
-                modelField.setPromptText("qwen-max");
-                apiKeyField.setPromptText("sk-... 开头的API密钥");
-            } else if ("ERNIE Bot".equals(selectedType)) {
-                baseUrlField.setPromptText("https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/");
-                modelField.setPromptText("ernie-bot-4.5");
-                apiKeyField.setPromptText("APIKey:SecretKey 格式");
-            } else if ("Zhipu".equals(selectedType)) {
-                baseUrlField.setPromptText("https://open.bigmodel.cn/api/paas/v4/chat/completions");
-                modelField.setPromptText("glm-4");
-                apiKeyField.setPromptText("API密钥");
-            } else if ("Moonshot".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.moonshot.cn/v1/chat/completions");
-                modelField.setPromptText("moonshot-v1-8k");
-                apiKeyField.setPromptText("sk-... 开头的API密钥");
-            } else if ("MiniMax".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.minimaxi.com/v1/chat/completions");
-                modelField.setPromptText("abab5.5-chat");
-                apiKeyField.setPromptText("APIKey:GroupID 格式");
-            } else if ("Mistral".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.mistral.ai/v1/chat/completions");
-                modelField.setPromptText("mistral-small-latest");
-                apiKeyField.setPromptText("Bearer... 格式的API密钥");
-            } else if ("DeepSeek".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.deepseek.com/v1/chat/completions");
-                modelField.setPromptText("deepseek-chat");
-                apiKeyField.setPromptText("sk-... 开头的API密钥");
-            } else if ("Xiaomimimo".equals(selectedType)) {
-                baseUrlField.setPromptText("https://api.xiaomimimo.com/v1/chat/completions");
-                modelField.setPromptText("mimo-large-2024");
-                apiKeyField.setPromptText("API密钥");
-            }
-        });
-
-        grid.add(new Label("现有配置:"), 0, 0);
-        grid.add(configChoice, 1, 0);
-        grid.add(new Label("配置名称:"), 0, 1);
-        grid.add(configNameField, 1, 1);
-        grid.add(new Label("AI服务:"), 0, 2);
-        grid.add(aiServiceChoice, 1, 2);
-        grid.add(new Label("API密钥:"), 0, 3);
-        grid.add(apiKeyField, 1, 3);
-        grid.add(new Label("模型:"), 0, 4);
-        grid.add(modelField, 1, 4);
-        grid.add(new Label("基础URL:"), 0, 5);
-        grid.add(baseUrlField, 1, 5);
-
-        dialog.getDialogPane().setContent(grid);
-
-        // 启用/禁用保存按钮
-        Platform.runLater(() -> configNameField.requestFocus());
-
-        // 处理结果
-        dialog.setResultConverter(dialogButton -> {
-            if (dialogButton == saveButtonType) {
-                // 创建或更新AI配置
-                if (configNameField.getText() != null && !configNameField.getText().trim().isEmpty()) {
-                    AIConfig newConfig = new AIConfig();
-                    newConfig.setName(configNameField.getText().trim());
-                    newConfig.setType(aiServiceChoice.getValue());
-                    newConfig.setApiKey(apiKeyField.getText().trim());
-                    newConfig.setModel(modelField.getText().trim());
-                    newConfig.setBaseUrl(baseUrlField.getText().trim());
-
-                    // 保存配置
-                    configManager.addConfig(newConfig);
-                    configManager.setCurrentConfig(newConfig.getName());
-                    aiAdapter = configManager.getCurrentAIAdapter();
-                    aiService.updateAdapter(newConfig);
-
-                    // 刷新供应商/模型切换条，否则切换条还停在旧列表，
-                    // 用户会以为「模型没保存」
-                    refreshModelList();
-
-                    appendToTerminal("AI配置已保存并激活: " + newConfig.getName() + "\n", "#00ffff");
-                    return newConfig.getName();
-                } else {
-                    showAlert("请输入配置名称");
-                    return null;
-                }
-            }
-            return null;
-        });
-
-        Platform.runLater(() -> {
-            dialog.showAndWait();
-        });
+        SettingsDialogController.showDialog(commandInput.getScene().getWindow(), "ai");
+        aiAdapter = AIConfigManager.getInstance().getCurrentAIAdapter();
+        refreshModelList();
     }
 
     @FXML
     private void clearChat() {
+        cancelActiveRequest();
+        setRequestRunning(false);
         terminalOutput.getChildren().clear();
     }
 
     @FXML
     private void cancelRequest() {
         cancelActiveRequest();
+        appendToTerminal(I18n.tr("assistant.stopped") + "\n", "#D29922");
         setRequestRunning(false);
     }
 
     private void cancelActiveRequest() {
+        requestGeneration.incrementAndGet();
         com.runzhi.aishell.ai.stream.AIRequestHandle request = activeRequest;
         if (request != null && !request.isDone()) request.cancel();
         activeRequest = null;
@@ -459,6 +222,7 @@ public class AIAssistantPanelController extends BaseController
      */
     @Override
     public void onWindowClosing() {
+        disposed = true;
         cancelActiveRequest();
     }
 
@@ -466,16 +230,30 @@ public class AIAssistantPanelController extends BaseController
         cancelRequestButton.setVisible(running);
         cancelRequestButton.setManaged(running);
         commandInput.setDisable(running);
+        if (providerChoice != null) providerChoice.setDisable(running);
+        if (modelChoice != null) modelChoice.setDisable(running);
+        if (refreshModelsButton != null) refreshModelsButton.setDisable(running);
+        if (configureAIButton != null) configureAIButton.setDisable(running);
     }
 
+    /** Append on FX directly so a cancelled request cannot leave a second layer of queued text writes. */
     private void appendToTerminal(String text, String color) {
-        com.runzhi.aishell.utils.ShellUtils.appendToTextFlow(terminalOutput, text, color);
-
-        // 自动滚动到底部
-        Platform.runLater(() -> {
-            terminalOutput.applyCss();
-            terminalOutput.layout();
-        });
+        String semantic = switch (color.toLowerCase(java.util.Locale.ROOT)) {
+            case "#e6edf3", "#a371f7" -> "-fx-text-primary";
+            case "#8b949e" -> "-fx-text-secondary";
+            case "#ff0000", "#f85149" -> "-fx-danger-color";
+            case "#ff9900", "#d29922" -> "-fx-warning-color";
+            case "#56d364", "#3fb950" -> "-fx-success-color";
+            default -> color;
+        };
+        long generation = requestGeneration.get();
+        Runnable append = () -> {
+            if (disposed || generation != requestGeneration.get()) return;
+            javafx.scene.text.Text node = new javafx.scene.text.Text(text);
+            node.setStyle("-fx-fill: " + semantic + ";");
+            terminalOutput.getChildren().add(node);
+        };
+        if (Platform.isFxApplicationThread()) append.run(); else Platform.runLater(append);
     }
 
     /**
@@ -486,60 +264,60 @@ public class AIAssistantPanelController extends BaseController
      * 只有「确认后执行」，避免误触。
      */
     private void appendCommandCard(String command) {
-        Platform.runLater(() -> {
-            CommandRisk risk = assessRisk(command);
+        CommandRisk risk = assessRisk(command);
 
-            VBox card = new VBox(6);
-            card.getStyleClass().add("ai-command-card");
+        VBox card = new VBox(6);
+        card.getStyleClass().add("ai-command-card");
+        card.setMinWidth(0);
+        card.prefWidthProperty().bind(terminalOutput.widthProperty());
+        card.maxWidthProperty().bind(terminalOutput.widthProperty());
 
-            // 标题行：Shell + 风险标签
-            javafx.scene.control.Label titleLabel = new javafx.scene.control.Label("Shell");
-            titleLabel.getStyleClass().add("ai-command-title");
+        // 标题行：Shell + 风险标签
+        javafx.scene.control.Label titleLabel = new javafx.scene.control.Label("Shell");
+        titleLabel.getStyleClass().add("ai-command-title");
 
-            javafx.scene.control.Label riskLabel = new javafx.scene.control.Label("风险：" + risk.label);
-            riskLabel.getStyleClass().add("ai-command-risk");
-            riskLabel.setStyle("-fx-text-fill: " + risk.color + ";");
+        javafx.scene.control.Label riskLabel = new javafx.scene.control.Label(I18n.tr("assistant.risk", I18n.tr("agent.risk." + risk.label)));
+        riskLabel.getStyleClass().add("ai-command-risk");
+        riskLabel.setStyle("-fx-text-fill: " + risk.color + ";");
 
-            javafx.scene.layout.HBox header = new javafx.scene.layout.HBox(10, titleLabel, riskLabel);
-            card.getChildren().add(header);
+        javafx.scene.layout.HBox header = new javafx.scene.layout.HBox(10, titleLabel, riskLabel);
+        card.getChildren().add(header);
 
-            // 命令正文（等宽字体）
-            javafx.scene.control.Label cmdLabel = new javafx.scene.control.Label("$ " + command);
-            cmdLabel.getStyleClass().add("ai-command-text");
-            cmdLabel.setWrapText(true);
-            card.getChildren().add(cmdLabel);
+        // 命令正文（等宽字体）
+        javafx.scene.control.Label cmdLabel = new javafx.scene.control.Label("$ " + command);
+        cmdLabel.getStyleClass().add("ai-command-text");
+        cmdLabel.setWrapText(true);
+        card.getChildren().add(cmdLabel);
 
-            // 操作行
-            javafx.scene.control.Button copyBtn = new javafx.scene.control.Button("复制");
-            copyBtn.getStyleClass().add("ai-command-btn");
-            copyBtn.setOnAction(e -> {
-                javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-                content.putString(command);
-                javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
-                appendToTerminal("已复制到剪贴板\n", "#8B949E");
-            });
-
-            javafx.scene.control.Button sendBtn = new javafx.scene.control.Button("发送到终端");
-            sendBtn.getStyleClass().add("ai-command-btn");
-            sendBtn.setOnAction(e -> sendCommandToTerminal(command));
-
-            // 统一走 executeCommandInTerminal：沙箱校验 + 风险分级 + 审批 + 审计。
-            // 高危按钮单独标红并提示需要二次确认，但门禁逻辑只有一处实现。
-            javafx.scene.control.Button execBtn;
-            if (risk == CommandRisk.HIGH) {
-                execBtn = new javafx.scene.control.Button("⚠ 确认后执行");
-                execBtn.getStyleClass().add("ai-command-btn-danger");
-            } else {
-                execBtn = new javafx.scene.control.Button("▶ 执行");
-                execBtn.getStyleClass().add("ai-command-btn");
-            }
-            execBtn.setOnAction(e -> executeCommandInTerminal(command));
-
-            card.getChildren().add(new javafx.scene.layout.HBox(8, copyBtn, sendBtn, execBtn));
-
-            terminalOutput.getChildren().add(card);
-            appendToTerminal("\n", "#E6EDF3");
+        // 操作行
+        javafx.scene.control.Button copyBtn = new javafx.scene.control.Button(I18n.tr("agent.copy"));
+        copyBtn.getStyleClass().add("ai-command-btn");
+        copyBtn.setOnAction(e -> {
+            boolean copied = ClipboardUtils.copyText(command);
+            appendToTerminal(I18n.tr(copied ? "assistant.copied" : "agent.copyFailed") + "\n",
+                    copied ? "#8B949E" : "#F85149");
         });
+
+        javafx.scene.control.Button sendBtn = new javafx.scene.control.Button(I18n.tr("agent.send"));
+        sendBtn.getStyleClass().add("ai-command-btn");
+        sendBtn.setOnAction(e -> sendCommandToTerminal(command));
+
+        // 统一走 executeCommandInTerminal：沙箱校验 + 风险分级 + 审批 + 审计。
+        // 高危按钮单独标红并提示需要二次确认，但门禁逻辑只有一处实现。
+        javafx.scene.control.Button execBtn;
+        if (risk == CommandRisk.HIGH) {
+            execBtn = new javafx.scene.control.Button(I18n.tr("assistant.executeHigh"));
+            execBtn.getStyleClass().add("ai-command-btn-danger");
+        } else {
+            execBtn = new javafx.scene.control.Button(I18n.tr("assistant.execute"));
+            execBtn.getStyleClass().add("ai-command-btn");
+        }
+        execBtn.setOnAction(e -> executeCommandInTerminal(command));
+
+        card.getChildren().add(new javafx.scene.layout.FlowPane(8, 6, copyBtn, sendBtn, execBtn));
+
+        terminalOutput.getChildren().add(card);
+        appendToTerminal("\n", "#E6EDF3");
     }
 
     /** 从 AI 回复中提取 shell 命令（优先 ```bash 代码块，其次 $ 前缀行） */
@@ -565,9 +343,9 @@ public class AIAssistantPanelController extends BaseController
 
     /** 命令风险分级（§18,§19） */
     private enum CommandRisk {
-        READ_ONLY("只读", "#3FB950"),
-        MEDIUM("中", "#D29922"),
-        HIGH("高", "#F85149");
+        READ_ONLY("readonly", "-fx-success-color"),
+        MEDIUM("medium", "-fx-warning-color"),
+        HIGH("high", "-fx-danger-color");
 
         final String label;
         final String color;
@@ -603,9 +381,9 @@ public class AIAssistantPanelController extends BaseController
         javafx.scene.control.TextField input = findCurrentTerminalInput();
         if (input != null) {
             input.setText(command);
-            appendToTerminal("已发送到终端输入框\n", "#8B949E");
+            appendToTerminal(I18n.tr("assistant.sent") + "\n", "#8B949E");
         } else {
-            appendToTerminal("没有活动的终端可发送\n", "#F85149");
+            appendToTerminal(I18n.tr("assistant.noTarget") + "\n", "#F85149");
         }
     }
 
@@ -618,19 +396,19 @@ public class AIAssistantPanelController extends BaseController
     private void executeCommandInTerminal(String command) {
         javafx.scene.control.TextField input = findCurrentTerminalInput();
         if (input == null) {
-            appendToTerminal("没有活动的终端可执行\n", "#F85149");
+            appendToTerminal(I18n.tr("assistant.noExecutionTarget") + "\n", "#F85149");
             return;
         }
         com.runzhi.aishell.service.TerminalCommandService commandService =
                 com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance().getTerminalCommandService();
         Object pane = com.runzhi.aishell.common.util.ParameterManager.getInstance().get("terminalTabPane");
         if (commandService == null || !(pane instanceof javafx.scene.control.TabPane tabPane)) {
-            appendToTerminal("终端服务不可用，无法执行\n", "#F85149");
+            appendToTerminal(I18n.tr("assistant.noService") + "\n", "#F85149");
             return;
         }
         javafx.scene.control.Tab selected = tabPane.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            appendToTerminal("没有活动的终端可执行\n", "#F85149");
+            appendToTerminal(I18n.tr("assistant.noExecutionTarget") + "\n", "#F85149");
             return;
         }
         String tabId = selected.getId() == null ? "unknown" : selected.getId();
@@ -642,7 +420,7 @@ public class AIAssistantPanelController extends BaseController
                 com.runzhi.aishell.agent.AgentSandboxPolicy.validate(command);
         if (!verdict.allowed()) {
             audit.record("panel_sandbox_denied", tabId, agentRisk(risk), command, "denied");
-            appendToTerminal("沙箱拒绝命令：" + verdict.reason() + "\n", "#F85149");
+            appendToTerminal(I18n.tr("assistant.denied", verdict.reason()) + "\n", "#F85149");
             return;
         }
 
@@ -652,17 +430,18 @@ public class AIAssistantPanelController extends BaseController
             javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
                     high ? javafx.scene.control.Alert.AlertType.WARNING
                             : javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                    (high ? "高危命令，可能造成不可恢复的变更，确认执行？\n\n"
-                            : "确认执行该命令？\n\n") + "$ " + command,
+                    (I18n.tr(high ? "agent.highWarning" : "agent.confirmHeader") + "\n\n") + "$ " + command,
                     javafx.scene.control.ButtonType.CANCEL, javafx.scene.control.ButtonType.OK);
-            confirm.setTitle(high ? "高危命令二次确认" : "命令确认");
+            confirm.setTitle(I18n.tr(high ? "agent.highTitle" : "agent.confirmTitle"));
+            ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setText(I18n.tr("agent.execute"));
+            ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setText(I18n.tr("settings.cancel"));
             confirm.showAndWait().ifPresentOrElse(btn -> {
                 if (btn == javafx.scene.control.ButtonType.OK) {
                     audit.record("panel_approved", tabId, agentRisk(risk), command, "approved");
                     runCommand(command, selected, input, commandService, tabId, risk);
                 } else {
                     audit.record("panel_rejected", tabId, agentRisk(risk), command, "rejected");
-                    appendToTerminal("已取消执行：" + command + "\n", "#D29922");
+                    appendToTerminal(I18n.tr("assistant.cancelled", command) + "\n", "#D29922");
                 }
             }, () -> audit.record("panel_rejected", tabId, agentRisk(risk), command, "dismissed"));
             return;
@@ -681,7 +460,7 @@ public class AIAssistantPanelController extends BaseController
         commandService.executeShellCommand(selected, command);
         com.runzhi.aishell.agent.AgentAuditLogger.getInstance().record(
                 "panel_executed", tabId, agentRisk(risk), command, "executed");
-        appendToTerminal("已执行: " + command + "\n", "#3FB950");
+        appendToTerminal(I18n.tr("assistant.executed", command) + "\n", "#3FB950");
     }
 
     /** 面板风险枚举对齐到审计用的统一分级。 */
@@ -700,7 +479,7 @@ public class AIAssistantPanelController extends BaseController
     }
 
     private void showAlert(String message) {
-        DialogUtils.showInfoDialog("提示", null, message);
+        DialogUtils.showInfoDialog(I18n.tr("assistant.notice"), null, message);
     }
 
     // Getter方法，供主控制器使用

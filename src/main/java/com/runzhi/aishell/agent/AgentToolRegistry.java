@@ -79,7 +79,8 @@ public final class AgentToolRegistry {
     }
 
     public AgentToolRegistry(AgentSessionTool sessionTool) {
-        this(sessionTool, AgentApprovalGate::request);
+        this(sessionTool, (id,risk,summary)-> AgentApprovalGate.request(id,risk,summary,
+                sessionTool.approvalContext(id,summary),sessionTool.approvalTarget(id)));
     }
 
     public AgentToolRegistry(AgentSessionTool sessionTool, ApprovalGate approvalGate) {
@@ -317,7 +318,8 @@ public final class AgentToolRegistry {
     private AgentToolResult awaitApproval(String tabId, CommandRisk risk, String summary) {
         AgentAuditLogger audit = AgentAuditLogger.getInstance();
         audit.record("tool_proposed", tabId, risk, summary, "pending");
-        boolean approved = approvalGate.requestApproval(tabId, risk, summary);
+        var valid=sessionTool.approvalTarget(tabId);
+        boolean approved = approvalGate.requestApproval(tabId, risk, summary) && valid.getAsBoolean();
         if (!approved) {
             audit.record("tool_rejected", tabId, risk, summary, "rejected");
             return AgentToolResult.error("用户拒绝执行：" + summary);

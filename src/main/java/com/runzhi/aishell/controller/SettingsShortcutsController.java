@@ -13,6 +13,9 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import com.runzhi.aishell.common.i18n.I18n;
+import java.util.LinkedHashMap;
+import com.runzhi.aishell.common.config.ShortcutConfigStore;
 import javafx.scene.input.KeyCombination;
 import javafx.stage.FileChooser;
 
@@ -35,6 +38,9 @@ public class SettingsShortcutsController {
     private ObservableList<ShortcutInfo> shortcutList = FXCollections.observableArrayList();
     private final Map<String, String> defaults = com.runzhi.aishell.common.config.ShortcutConfigStore.defaults();
     
+    /** Unsaved values belong to this settings dialog only. */
+    private final Map<String, String> draft = new LinkedHashMap<>(ShortcutConfigStore.snapshot());
+
     /**
      * 初始化方法
      */
@@ -44,6 +50,10 @@ public class SettingsShortcutsController {
         
         // 初始化表格
         setupTable();
+        presetCombo.getItems().setAll(
+                I18n.tr("shortcuts.preset.windows"), I18n.tr("shortcuts.preset.mac"),
+                I18n.tr("shortcuts.preset.linux"), I18n.tr("shortcuts.preset.vscode"),
+                I18n.tr("shortcuts.preset.idea"));
         
         // 加载默认快捷键
         loadDefaultShortcuts();
@@ -62,7 +72,7 @@ public class SettingsShortcutsController {
      */
     private void setupTable() {
         colCategory.setCellValueFactory(new PropertyValueFactory<>("category"));
-        colFunction.setCellValueFactory(new PropertyValueFactory<>("function"));
+        colFunction.setCellValueFactory(new PropertyValueFactory<>("functionLabel"));
         colShortcut.setCellValueFactory(new PropertyValueFactory<>("shortcut"));
         colConflict.setCellValueFactory(new PropertyValueFactory<>("conflict"));
         
@@ -74,8 +84,8 @@ public class SettingsShortcutsController {
                 if (empty || item == null) {
                     setText(null);
                 } else {
-                    setText(item ? "⚠️ 冲突" : "");
-                    setStyle(item ? "-fx-text-fill: #F44336; -fx-font-weight: bold;" : "");
+                    setText(item ? "⚠ " + I18n.tr("shortcuts.conflictMark") : "");
+                    setStyle(item ? "-fx-text-fill: -fx-warning-color; -fx-font-weight: bold;" : "");
                 }
             }
         });
@@ -89,7 +99,7 @@ public class SettingsShortcutsController {
         
         defaults.forEach((action, ignored) -> shortcutList.add(new ShortcutInfo(
                 action.contains("连接") ? "连接" : action.contains("设置") ? "系统" : "终端",
-                action, com.runzhi.aishell.common.config.ShortcutConfigStore.get(action), false)));
+                action, draft.get(action), false)));
         
         checkConflicts();
     }
@@ -109,7 +119,9 @@ public class SettingsShortcutsController {
                 ShortcutInfo s1 = shortcutList.get(i);
                 ShortcutInfo s2 = shortcutList.get(j);
                 
-                if (s1.getShortcut().equals(s2.getShortcut()) && !s1.getShortcut().isEmpty()) {
+                if (!s1.getShortcut().isBlank() && !s2.getShortcut().isBlank()
+                        && KeyCombination.valueOf(s1.getShortcut().replace("Comma", ",")).equals(
+                                KeyCombination.valueOf(s2.getShortcut().replace("Comma", ",")))) {
                     s1.setConflict(true);
                     s2.setConflict(true);
                 }
@@ -136,7 +148,7 @@ public class SettingsShortcutsController {
         } else {
             ObservableList<ShortcutInfo> filtered = FXCollections.observableArrayList();
             for (ShortcutInfo shortcut : shortcutList) {
-                if (shortcut.getFunction().toLowerCase().contains(keyword.toLowerCase()) ||
+                if (shortcut.getFunctionLabel().toLowerCase(java.util.Locale.ROOT).contains(keyword.toLowerCase(java.util.Locale.ROOT)) ||
                     shortcut.getShortcut().toLowerCase().contains(keyword.toLowerCase())) {
                     filtered.add(shortcut);
                 }
@@ -152,22 +164,22 @@ public class SettingsShortcutsController {
     private void handleEditShortcut() {
         ShortcutInfo selected = shortcutsTable.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            showAlert("提示", "请先选择要编辑的快捷键");
+            showAlert(I18n.tr("shortcuts.notice"), I18n.tr("shortcuts.selectEdit"));
             return;
         }
         
         TextInputDialog dialog = new TextInputDialog(selected.getShortcut());
-        dialog.setTitle("编辑快捷键");
-        dialog.setHeaderText(selected.getFunction());
-        dialog.setContentText("组合键（例如 Ctrl+Shift+L）：");
+        dialog.setTitle(I18n.tr("shortcuts.editTitle"));
+        dialog.setHeaderText(selected.getFunctionLabel());
+        dialog.setContentText(I18n.tr("shortcuts.keyPrompt"));
         dialog.showAndWait().ifPresent(value -> {
             try {
                 if (!value.isBlank()) KeyCombination.valueOf(value.replace("Comma", ","));
                 selected.setShortcut(value.trim());
-                com.runzhi.aishell.common.config.ShortcutConfigStore.set(selected.getFunction(), value.trim());
+                draft.put(selected.getFunction(), value.trim());
                 checkConflicts();
-                statusLabel.setText("快捷键已生效");
-            } catch (IllegalArgumentException e) { showAlert("无效快捷键", value); }
+                statusLabel.setText(I18n.tr("shortcuts.pending"));
+            } catch (IllegalArgumentException e) { showAlert(I18n.tr("shortcuts.invalid"), value); }
         });
     }
     
@@ -178,15 +190,15 @@ public class SettingsShortcutsController {
     private void handleClearShortcut() {
         ShortcutInfo selected = shortcutsTable.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            showAlert("提示", "请先选择要清除的快捷键");
+            showAlert(I18n.tr("shortcuts.notice"), I18n.tr("shortcuts.selectClear"));
             return;
         }
         
         selected.setShortcut("");
-        com.runzhi.aishell.common.config.ShortcutConfigStore.set(selected.getFunction(), "");
+        draft.put(selected.getFunction(), "");
         checkConflicts();
         shortcutsTable.refresh();
-        statusLabel.setText("已清除快捷键");
+        statusLabel.setText(I18n.tr("shortcuts.cleared"));
     }
     
     /**
@@ -196,15 +208,15 @@ public class SettingsShortcutsController {
     private void handleRestoreDefault() {
         ShortcutInfo selected = shortcutsTable.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            showAlert("提示", "请先选择要恢复的快捷键");
+            showAlert(I18n.tr("shortcuts.notice"), I18n.tr("shortcuts.selectRestore"));
             return;
         }
         
         String value = defaults.get(selected.getFunction());
         selected.setShortcut(value);
-        com.runzhi.aishell.common.config.ShortcutConfigStore.set(selected.getFunction(), value);
+        draft.put(selected.getFunction(), value);
         checkConflicts();
-        statusLabel.setText("已恢复默认快捷键");
+        statusLabel.setText(I18n.tr("shortcuts.restored"));
     }
     
     /**
@@ -213,15 +225,16 @@ public class SettingsShortcutsController {
     @FXML
     private void handleResetAll() {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("确认重置");
+        alert.setTitle(I18n.tr("shortcuts.confirmReset"));
         alert.setHeaderText(null);
-        alert.setContentText("确定要将所有快捷键恢复为默认值吗？");
+        alert.setContentText(I18n.tr("shortcuts.resetQuestion"));
         
         alert.showAndWait().ifPresent(response -> {
             if (response == ButtonType.OK) {
-                com.runzhi.aishell.common.config.ShortcutConfigStore.reset();
+                draft.clear();
+                draft.putAll(defaults);
                 loadDefaultShortcuts();
-                statusLabel.setText("已重置为默认快捷键");
+                statusLabel.setText(I18n.tr("shortcuts.reset"));
             }
         });
     }
@@ -233,7 +246,7 @@ public class SettingsShortcutsController {
     private void handleApplyPreset() {
         String preset = presetCombo.getValue();
         if (preset == null) {
-            showAlert("提示", "请先选择预设方案");
+            showAlert(I18n.tr("shortcuts.notice"), I18n.tr("shortcuts.selectPresetFirst"));
             return;
         }
         
@@ -242,10 +255,10 @@ public class SettingsShortcutsController {
             String value = defaults.get(item.getFunction());
             if (mac) value = value.replace("Ctrl+", "Meta+");
             item.setShortcut(value);
-            com.runzhi.aishell.common.config.ShortcutConfigStore.set(item.getFunction(), value);
+            draft.put(item.getFunction(), value);
         }
         checkConflicts();
-        statusLabel.setText("已应用 " + preset);
+        statusLabel.setText(I18n.tr("shortcuts.presetApplied", preset));
     }
     
     /**
@@ -254,12 +267,12 @@ public class SettingsShortcutsController {
     @FXML
     private void handleExportShortcuts() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("导出快捷键");
+        chooser.setTitle(I18n.tr("shortcuts.export"));
         chooser.setInitialFileName("aishell-shortcuts.json");
         java.io.File file = chooser.showSaveDialog(shortcutsTable.getScene().getWindow());
         if (file == null) return;
-        try { com.runzhi.aishell.common.config.ShortcutConfigStore.exportTo(file.toPath()); statusLabel.setText("导出完成"); }
-        catch (Exception e) { showAlert("导出失败", e.getMessage()); }
+        try { com.runzhi.aishell.common.config.ShortcutConfigStore.exportTo(file.toPath(), draft); statusLabel.setText(I18n.tr("shortcuts.exported")); }
+        catch (Exception e) { showAlert(I18n.tr("shortcuts.exportFailed"), e.getMessage()); }
     }
     
     /**
@@ -268,14 +281,20 @@ public class SettingsShortcutsController {
     @FXML
     private void handleImportShortcuts() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("导入快捷键");
+        chooser.setTitle(I18n.tr("shortcuts.import"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("JSON", "*.json"));
         java.io.File file = chooser.showOpenDialog(shortcutsTable.getScene().getWindow());
         if (file == null) return;
-        try { com.runzhi.aishell.common.config.ShortcutConfigStore.importFrom(file.toPath()); loadDefaultShortcuts(); statusLabel.setText("导入完成并已生效"); }
-        catch (Exception e) { showAlert("导入失败", e.getMessage()); }
+        try { draft.putAll(ShortcutConfigStore.readFrom(file.toPath(), draft)); loadDefaultShortcuts(); statusLabel.setText(I18n.tr("shortcuts.imported")); }
+        catch (Exception e) { showAlert(I18n.tr("shortcuts.importFailed"), e.getMessage()); }
     }
     
+    /** Validate before the settings dialog writes any page. */
+    public void validateSettings() { ShortcutConfigStore.validate(draft); }
+
+    /** Persist only when Apply or Save is requested. */
+    public void saveSettings() { ShortcutConfigStore.saveAll(draft); }
+
     /**
      * 显示提示对话框
      */
@@ -304,7 +323,19 @@ public class SettingsShortcutsController {
         }
         
         public String getCategory() {
-            return category;
+            return I18n.tr("shortcuts.category." + switch (category) {
+                case "连接" -> "connection"; case "系统" -> "system"; default -> "terminal";
+            });
+        }
+
+        /** Localized label; getFunction remains the stable persisted action identifier. */
+        public String getFunctionLabel() {
+            String key = switch (function) {
+                case "新建终端标签" -> "new"; case "关闭标签" -> "close";
+                case "重新连接" -> "reconnect"; case "清屏" -> "clear";
+                case "打开设置" -> "settings"; default -> null;
+            };
+            return key == null ? function : I18n.tr("shortcuts.action." + key);
         }
         
         public String getFunction() {

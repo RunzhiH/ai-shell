@@ -55,6 +55,23 @@ public abstract class BaseAIAdapter implements AIAdapter {
         return value > 0 ? value : AppConstants.DEFAULT_MAX_TOKENS;
     }
 
+    /** 截断重试设置的临时输出预算；> 0 时覆盖用户配置的 max_tokens，仅对本次查询生效。 */
+    private volatile int maxTokensHint = -1;
+
+    protected int effectiveMaxTokens() {
+        return maxTokensHint > 0 ? maxTokensHint : currentMaxTokens();
+    }
+
+    @Override
+    public int maxOutputTokens() { return currentMaxTokens(); }
+
+    @Override
+    public String sendQuery(String query, int maxOutputTokensHint) {
+        this.maxTokensHint = maxOutputTokensHint;
+        try { return sendQuery(query); }
+        finally { this.maxTokensHint = -1; }
+    }
+
     /** 用户配置的 top_p（未配置时回退默认值）。 */
     protected double currentTopP() {
         double value = runtimeConfig != null ? runtimeConfig.getTopP() : 0;
@@ -107,7 +124,7 @@ public abstract class BaseAIAdapter implements AIAdapter {
         
         // 添加通用参数：优先使用用户在设置页配置的值，形参仅作回退（2026-10-23 审计 P1-8）
         requestBody.addProperty("temperature", temperature > 0 ? temperature : currentTemperature());
-        requestBody.addProperty("max_tokens", maxTokens > 0 ? maxTokens : currentMaxTokens());
+        requestBody.addProperty("max_tokens", maxTokens > 0 ? maxTokens : effectiveMaxTokens());
         requestBody.addProperty("top_p", currentTopP());
 
         return requestBody;
@@ -161,20 +178,27 @@ public abstract class BaseAIAdapter implements AIAdapter {
     }
 
     /**
-     * 从 OpenAI 兼容的 message 对象中抽取文本内容，兼容常见非标准返回：
+     * 从 OpenAI 兼容的 message 对象中抽取最终文本内容，兼容常见非标准返回：
      * <ul>
      *   <li>content 为字符串（标准格式）；</li>
      *   <li>content 为文本块数组（新版 OpenAI 兼容格式）；</li>
-     *   <li>content 缺失/为空时回退到 reasoning_content（DeepSeek reasoner、OpenAI o 系列等推理模型）；</li>
+     *   <li>content 缺失/为空时返回空字符串；reasoning_content 不作为最终内容回退；</li>
      *   <li>content 为 JSON null 时按空处理（避免 Gson 的 JsonNull 被转成字面量 "null"）。</li>
      * </ul>
      *
      * @param message 解析后的 assistant message 对象
-     * @return 抽取到的文本，可能为空字符串
+     * @return 抽取到的最终文本，可能为空字符串
      */
     protected String extractMessageText(JsonObject message) {
         String content = extractContentField(message);
         return content;
+    }
+
+    /** 输出被 token 上限截断：确定结果，重试不会得到完整内容。 */
+    protected static class TruncatedResponseException extends IllegalStateException {
+        TruncatedResponseException(String detail) {
+            super(detail);
+        }
     }
 
     /** Unified non-streaming response pipeline used by every provider adapter. */
@@ -196,6 +220,10 @@ public abstract class BaseAIAdapter implements AIAdapter {
                         problem = "response contains no final content";
                     }
                 }
+            } catch (TruncatedResponseException e) {
+                // 明确的截断结果不可通过重试修复；不要用半截内容或 reasoning 充当回答。
+                return "Error: " + provider + " output was truncated at the token limit ("
+                        + e.getMessage() + "). Increase the maximum tokens in Settings or shorten the task.";
             } catch (RuntimeException e) {
                 problem = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             }
@@ -215,7 +243,9 @@ public abstract class BaseAIAdapter implements AIAdapter {
         if (choices == null || choices.isEmpty()) throw new IllegalStateException("response contains no choices");
         JsonObject choice = choices.get(0).getAsJsonObject();
         String finish = jsonString(choice.get("finish_reason"));
-        if ("length".equals(finish)) throw new IllegalStateException("output truncated (finish_reason=length)");
+        if ("length".equals(finish)) {
+            throw new TruncatedResponseException("finish_reason=" + finish + ", max_tokens=" + currentMaxTokens());
+        }
         String content = extractMessageText(choice.getAsJsonObject("message"));
         if (!content.isBlank()) return content;
         JsonObject message = choice.getAsJsonObject("message");
@@ -305,6 +335,13 @@ public abstract class BaseAIAdapter implements AIAdapter {
         return config;
     }
     
+    /** 仅附加运行时参数，保留适配器构造时拆分的凭据字段（ERNIE/MiniMax 的 secret/group）。 */
+    void attachRuntimeConfig(AIConfig config) {
+        if (config == null) return;
+        this.runtimeConfig = config;
+        if (config.getModel() != null) this.model = config.getModel();
+    }
+
     /**
      * 更新配置
      */

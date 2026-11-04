@@ -86,6 +86,13 @@
                     <CheckBox fx:id="autoSaveCheck" text="%settings.auto.save" selected="true"/>
                 </HBox>
                 
+                <!-- 保存 Agent 历史 -->
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <CheckBox fx:id="agentHistoryCheck" text="%settings.agent.history" selected="true">
+                        <tooltip><Tooltip text="%settings.agent.history.tip"/></tooltip>
+                    </CheckBox>
+                </HBox>
+                
                 <!-- 开机自启 -->
                 <HBox alignment="CENTER_LEFT" spacing="10">
                     <CheckBox fx:id="autoStartCheck" text="%settings.auto.start"/>

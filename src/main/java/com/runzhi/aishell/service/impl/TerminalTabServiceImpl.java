@@ -66,7 +66,7 @@ public class TerminalTabServiceImpl implements TerminalTabService {
                 if (terminalTabPane != null) {
                     // 创建新的 Tab
                     javafx.scene.control.Tab newTab = new javafx.scene.control.Tab("本地终端");
-                    newTab.setId("local_" + System.currentTimeMillis());
+                    newTab.setId(com.runzhi.aishell.common.util.TabIdentity.nextId("local"));
                     
                     // 设置终端界面 - 使用现有的 getTerminalAndFileManagerView 方法
                     TerminalUIService uiService = moduleManager.getTerminalUIService();
@@ -103,7 +103,7 @@ public class TerminalTabServiceImpl implements TerminalTabService {
                     // 创建新的 Tab
                     javafx.scene.control.Tab newTab = new javafx.scene.control.Tab(
                         params.getHost() + ":" + params.getPort());
-                    newTab.setId("ssh_" + System.currentTimeMillis());
+                    newTab.setId(com.runzhi.aishell.common.util.TabIdentity.nextId("ssh"));
                     
                     // 设置终端界面
                     javafx.scene.Parent view = uiService.getTerminalAndFileManagerView();
@@ -324,18 +324,8 @@ public class TerminalTabServiceImpl implements TerminalTabService {
                                 connectionService == null ? null : () -> connectionService.attemptReconnection(tab));
 
                         TextField commandInput = input;
-                        // 用户在输出区直接键入可打印字符时，将内容转交给命令输入框。
-                        output.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, event -> {
-                            if (!event.isControlDown() && !event.isAltDown() && !event.isMetaDown()
-                                    && event.getCharacter() != null
-                                    && !event.getCharacter().isEmpty()
-                                    && event.getCharacter().chars().allMatch(ch -> ch >= 0x20 && ch != 0x7f)) {
-                                commandInput.appendText(event.getCharacter());
-                                commandInput.requestFocus();
-                                commandInput.positionCaret(commandInput.getLength());
-                                event.consume();
-                            }
-                        });
+                        com.runzhi.aishell.terminal.TerminalInputBinder
+                                .forwardOutputEditingKeys(output, commandInput);
                         Platform.runLater(() -> {
                             commandInput.requestFocus();
                             commandInput.positionCaret(commandInput.getLength());
@@ -401,7 +391,9 @@ public class TerminalTabServiceImpl implements TerminalTabService {
             InlineCssTextArea hintText = new InlineCssTextArea();
             hintText.setEditable(false);
             hintText.setWrapText(true);
-            hintText.setTextInsertionStyle(
+            hintText.getStyleClass().add("terminal-output");
+            hintText.setStyle("-fx-background-color: -fx-terminal-bg;");
+            hintText.replaceText(
                     "欢迎使用 AI Shell!\n\n" +
                             "功能说明:\n" +
                             "1. 双击标签栏空白处可新建终端标签页\n" +
@@ -491,10 +483,8 @@ public class TerminalTabServiceImpl implements TerminalTabService {
 
     @Override
     public String getTabId(Tab tab) {
-        if (tab == null) {
-            return null;
-        }
-        return tab.getId() != null ? tab.getId() : tab.getText();
+        // 身份只能是稳定 id：主机名/文本不应承担身份（v6 阶段 2）
+        return tab == null ? null : tab.getId();
     }
 
     @Override

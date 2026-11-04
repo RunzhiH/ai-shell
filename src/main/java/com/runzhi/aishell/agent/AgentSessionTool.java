@@ -17,6 +17,14 @@ import java.util.List;
 public interface AgentSessionTool {
     boolean isConnected(String sessionId);
 
+    default java.util.function.BooleanSupplier approvalTarget(String sessionId) {
+        return () -> isConnected(sessionId);
+    }
+
+    default AgentProposal.Context approvalContext(String sessionId, String impact) {
+        return new AgentProposal.Context(sessionId,"—",sessionId,workingDirectory(sessionId),impact);
+    }
+
     String workingDirectory(String sessionId);
 
     List<FileInfo> listRemoteFiles(String sessionId, String path) throws Exception;

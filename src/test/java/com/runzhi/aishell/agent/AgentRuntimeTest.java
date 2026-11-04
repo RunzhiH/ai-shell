@@ -282,4 +282,55 @@ class AgentRuntimeTest {
             lastDeleteDirectory = directory;
         }
     }
+
+    @Test
+    void acceptsJsonWrappedInMarkdownFenceWithSurroundingText() {
+        StubAdapter adapter = new StubAdapter(
+                "下面是要返回的 JSON：\n```json\n"
+                        + "{\"type\":\"final_answer\",\"reasoning_summary\":\"ok\",\"answer\":\"完成\"}\n"
+                        + "```\n以上。");
+        AgentRuntime runtime = new AgentRuntime(new AgentToolRegistry(new StubSessionTool(), AUTO_APPROVE));
+
+        AgentDecision decision = runtime.nextAction(adapter, "tab-1", "测试", "", null);
+
+        assertEquals(AgentDecision.Type.COMPLETE, decision.type());
+        assertEquals("完成", decision.content());
+        assertEquals(1, adapter.calls, "带围栏的响应不应触发重试");
+    }
+
+    @Test
+    void acceptsJsonAfterReasoningPrefixAndTrailingText() {
+        StubAdapter adapter = new StubAdapter(
+                "先确认当前目录：\n{\"type\":\"final_command\",\"command\":\"pwd\"}\n执行该命令。");
+        AgentRuntime runtime = new AgentRuntime(new AgentToolRegistry(new StubSessionTool(), AUTO_APPROVE));
+
+        String command = runtime.resolveCommand(adapter, "tab-1", "查看目录", null);
+
+        assertEquals("pwd", command);
+        assertEquals(1, adapter.calls, "JSON 前后的说明文字不应触发重试");
+    }
+
+    @Test
+    void acceptsJsonWithLiteralNewlineInsideString() {
+        StubAdapter adapter = new StubAdapter(
+                "{\"type\":\"final_command\",\"command\":\"printf 'line1\nline2'\"}");
+        AgentRuntime runtime = new AgentRuntime(new AgentToolRegistry(new StubSessionTool(), AUTO_APPROVE));
+
+        String command = runtime.resolveCommand(adapter, "tab-1", "查看目录", null);
+
+        assertEquals("printf 'line1\nline2'", command);
+        assertEquals(1, adapter.calls);
+    }
+    @Test
+    void acceptsLenientJsonWithSingleQuotesAndUnquotedKeys() {
+        StubAdapter adapter = new StubAdapter(
+                "{type:'final_answer',reasoning_summary:'ok',answer:'完成'}");
+        AgentRuntime runtime = new AgentRuntime(new AgentToolRegistry(new StubSessionTool(), AUTO_APPROVE));
+
+        AgentDecision decision = runtime.nextAction(adapter, "tab-1", "测试", "", null);
+
+        assertEquals(AgentDecision.Type.COMPLETE, decision.type());
+        assertEquals("完成", decision.content());
+        assertEquals(1, adapter.calls);
+    }
 }

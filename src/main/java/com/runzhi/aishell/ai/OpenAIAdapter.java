@@ -43,8 +43,7 @@ public class OpenAIAdapter extends BaseAIAdapter implements StreamingAIAdapter {
             return "Error: AI adapter not configured. Please set API key.";
         }
 
-        JsonObject body = createMessageRequestBody(query, currentTemperature(), currentMaxTokens());
-        body.addProperty("top_p", AppConstants.DEFAULT_TOP_P);
+        JsonObject body = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
         Map<String, String> headers = Map.of("Content-Type", "application/json", "Authorization", "Bearer " + apiKey);
         return executeJsonRequest("OpenAI", () -> HttpClientUtil.doPost(baseUrl, body, headers),
                 this::extractOpenAICompatible);
@@ -59,8 +58,7 @@ public class OpenAIAdapter extends BaseAIAdapter implements StreamingAIAdapter {
     @Override
     public void streamQuery(String query, Consumer<String> onDelta, BooleanSupplier cancelled) throws Exception {
         if (!isConfigured()) throw new IllegalStateException("AI adapter not configured. Please set API key.");
-        JsonObject requestBody = createMessageRequestBody(query, AppConstants.DEFAULT_TEMPERATURE,
-                AppConstants.DEFAULT_MAX_TOKENS);
+        JsonObject requestBody = createMessageRequestBody(query, currentTemperature(), effectiveMaxTokens());
         requestBody.addProperty("stream", true);
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(java.net.URI.create(baseUrl))

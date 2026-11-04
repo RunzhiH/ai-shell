@@ -29,6 +29,8 @@ public class ConnectionParams {
     private String username;
     private String password;
     private String privateKeyPath;
+    /** 分组（环境），用于侧栏会话树分组；旧配置没有该字段时归入默认分组 */
+    private String group;
     
     // 加密标志，表示密码是否已加密
     private boolean passwordEncrypted = true;
@@ -38,6 +40,19 @@ public class ConnectionParams {
     
     // 添加连接状态字段
     private boolean connected = false;
+
+    /** 完整连接端点：user@host:port；用户名缺失时退化为 host:port。 */
+    public String displayEndpoint() {
+        String hostValue = host == null ? "" : host;
+        String user = username == null || username.isBlank() ? "" : username + "@";
+        return user + hostValue + ":" + port;
+    }
+
+    /** 可读目标：优先使用用户命名的连接名，否则使用完整端点。 */
+    public String displayTarget() {
+        if (profileName != null && !profileName.isBlank()) return profileName;
+        return displayEndpoint();
+    }
 
     /**
      * 使用默认端口22的构造函数

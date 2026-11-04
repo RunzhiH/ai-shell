@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
 public class SystemMonitor {
     private DataSourceProvider dataSourceProvider;
     private volatile boolean monitoring = false;
+    /** 关闭/切换监控后不再发起新命令；避免 SSH 已断开时把预期失败记成 ERROR。 */
+    private volatile boolean stopping = false;
     private volatile Thread monitorThread;
     private MonitorCallback callback; // 添加回调接口
     /** CPU /proc/stat 上次采样的各字段累计值，用于两次采样间的增量百分比（2026-10-23 审计 P1-16）。 */
@@ -43,6 +45,7 @@ public class SystemMonitor {
 
     public synchronized void startMonitoring() {
         if (monitorThread != null && monitorThread.isAlive()) return;
+        stopping = false;
         monitoring = true;
         monitorThread = new Thread(this::monitorLoop, "ssh-system-monitor");
         monitorThread.setDaemon(true);
@@ -54,6 +57,8 @@ public class SystemMonitor {
             try {
                 // 获取系统指标
                 SystemMetrics metrics = getSystemMetrics();
+                // 采样期间被要求停止时丢弃这批数据，避免关闭后仍回调 UI
+                if (!monitoring) break;
 
                 // 通过回调更新UI，使用 SystemMetrics 对象
                 if (callback != null && metrics != null) {
@@ -83,6 +88,7 @@ public class SystemMonitor {
      * @return SystemMetrics 对象
      */
     public SystemMetrics getSystemMetrics() {
+        if (stopping) return null;
         try {
             // 尝试使用更简单的命令来获取系统指标，避免top命令可能的超时问题
             SystemMetrics metrics = SystemMetrics.builder().build();
@@ -351,12 +357,30 @@ public class SystemMonitor {
         return maxUsage;
     }
 
+    /** 连接已关闭或监控正在停止时，命令失败属于预期，不应污染 ERROR 日志。 */
+    private void logCommandFailure(String command, Exception failure) {
+        if (stopping || !isDataSourceConnected()) {
+            log.debug("System monitor command stopped with session: {}", failure.getMessage());
+        } else {
+            log.error("Error executing command: {}", command, failure);
+        }
+    }
+
+    private boolean isDataSourceConnected() {
+        try {
+            return dataSourceProvider != null && dataSourceProvider.isConnected();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private String executeCommand(String command) {
         // 实现命令执行逻辑
+        if (stopping) return "";
         try {
             return dataSourceProvider.executeCommand(command);
         } catch (Exception e) {
-            log.error("Error executing command: {}", command, e);
+            logCommandFailure(command, e);
             return "";
         }
     }
@@ -365,12 +389,13 @@ public class SystemMonitor {
      * 执行命令并设置超时时间
      */
     private String executeCommandWithTimeout(String command, int timeoutMs) {
+        if (stopping) return "";
         // 创建一个Future任务来执行命令并在超时后取消
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
             try {
                 return dataSourceProvider.executeCommand(command);
             } catch (Exception e) {
-                log.error("Error executing command: {}", command, e);
+                logCommandFailure(command, e);
                 return "";
             }
         }, com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool());
@@ -381,9 +406,14 @@ public class SystemMonitor {
             future.cancel(true);
             log.warn("Command execution timed out: {} ({}ms)", command, timeoutMs);
             return "";
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            log.debug("Command wait interrupted while stopping: {}", command);
+            return "";
         } catch (Exception e) {
             future.cancel(true);
-            log.error("Command execution failed: {}", command, e);
+            logCommandFailure(command, e);
             return "";
         }
     }
@@ -538,27 +568,38 @@ public class SystemMonitor {
         long totalRxBytes = 0;
         long totalTxBytes = 0;
 
-        for (String line : lines) {
-            line = line.trim();
+        for (String rawLine : lines) {
+            String line = rawLine.trim();
             if (line.isEmpty()) continue;
 
-            // 跳过标题行与回环接口（此前远端 grep 的接口白名单会漏掉 ens33/eno1/enx 等主流命名）
-            if (line.contains("Inter-|") || line.contains("|face")) continue;
-            String ifname = line.split(":")[0].trim();
-            if (ifname.equals("lo")) continue;
+            // /proc/net/dev 的接口行固定是 "name: rx_* tx_*"，两行表头（"Inter-|..." 与
+            // " face |bytes ..."）都不含冒号，因此按冒号定位接口行。
+            // 旧实现用 "|face" 判定表头，与实际的 " face |bytes" 对不上，导致表头被当成
+            // 接口行解析：parts[1] 取到 "|bytes"，每次采样都抛 NumberFormatException
+            // 并打出一条 debug 日志。
+            int colon = line.indexOf(':');
+            if (colon <= 0) continue;
 
-            // 解析网络接口信息：冒号后的 16 列依次是 rx_* 与 tx_*
-            String[] parts = line.trim().split("[:\\s]+");
-            if (parts.length >= 10) {
-                try {
-                    long rxBytes = Long.parseLong(parts[1]); // 接收字节数
-                    long txBytes = Long.parseLong(parts[9]); // 发送字节数
+            String ifname = line.substring(0, colon).trim();
+            // 接口名不含空白与 '|'：既排除残留的表头，也避免把任意 "xxx yyy: ..." 当接口
+            if (ifname.isEmpty() || ifname.indexOf('|') >= 0
+                    || ifname.chars().anyMatch(Character::isWhitespace)) {
+                continue;
+            }
+            if ("lo".equals(ifname)) continue;
 
-                    totalRxBytes += rxBytes;
-                    totalTxBytes += txBytes;
-                } catch (NumberFormatException e) {
-                    log.debug("Error parsing network stats: {}", e.getMessage());
-                }
+            // 冒号后是 rx 的 8 列紧跟 tx 的 8 列；列数不足说明输出被截断，跳过而不是误读错位的列
+            String[] parts = line.substring(colon + 1).trim().split("\\s+");
+            if (parts.length < 16) continue;
+
+            try {
+                long rxBytes = Long.parseLong(parts[0]);  // rx bytes
+                long txBytes = Long.parseLong(parts[8]);  // tx bytes
+
+                totalRxBytes += rxBytes;
+                totalTxBytes += txBytes;
+            } catch (NumberFormatException e) {
+                log.debug("Error parsing network stats for {}: {}", ifname, e.getMessage());
             }
         }
 
@@ -632,6 +673,7 @@ public class SystemMonitor {
     }
 
     public synchronized void stopMonitoring() {
+        stopping = true;
         monitoring = false;
         Thread thread = monitorThread;
         monitorThread = null;

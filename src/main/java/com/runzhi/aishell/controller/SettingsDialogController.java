@@ -55,9 +55,15 @@ public class SettingsDialogController implements Initializable {
             dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
             ((javafx.scene.control.Button) dialog.getDialogPane().lookupButton(ButtonType.OK)).setText(I18n.tr("settings.save"));
             ((javafx.scene.control.Button) dialog.getDialogPane().lookupButton(ButtonType.CANCEL)).setText(I18n.tr("settings.cancel"));
-            dialog.showAndWait().ifPresent(result -> {
-                if (result == ButtonType.OK) controller.applySettings();
-            });
+            dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(
+                    javafx.event.ActionEvent.ACTION, event -> {
+                        try { controller.applySettings(); }
+                        catch (RuntimeException failure) {
+                            event.consume();
+                            controller.showSaveFailure(failure);
+                        }
+                    });
+            dialog.showAndWait();
         } catch (Exception e) {
             log.error("打开设置失败", e);
             Alert alert = new Alert(Alert.AlertType.ERROR);
@@ -245,10 +251,14 @@ public class SettingsDialogController implements Initializable {
      */
     public void applySettings() {
         log.info("应用设置...");
+        // Shortcut validation runs before any page is persisted.
+        loadedControllers.values().stream().filter(SettingsShortcutsController.class::isInstance)
+                .map(SettingsShortcutsController.class::cast).forEach(SettingsShortcutsController::validateSettings);
         loadedControllers.values().forEach(controller -> {
             if (controller instanceof SettingsGeneralController general) general.saveSettings();
             else if (controller instanceof SettingsSSHController ssh) ssh.saveSettings();
             else if (controller instanceof SettingsAIController ai) ai.saveSettings();
+            else if (controller instanceof SettingsShortcutsController shortcuts) shortcuts.saveSettings();
         });
     }
 
@@ -260,10 +270,20 @@ public class SettingsDialogController implements Initializable {
         try {
             applySettings();
         } catch (RuntimeException e) {
-            log.error("应用设置失败", e);
+            showSaveFailure(e);
         }
     }
     
+    /** Keep the dialog and its draft available when saving fails. */
+    private void showSaveFailure(RuntimeException failure) {
+        log.error("保存设置失败", failure);
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(I18n.tr("settings.save.failed"));
+        alert.setHeaderText(null);
+        alert.setContentText(failure.getMessage() == null ? I18n.tr("settings.save.fallback") : failure.getMessage());
+        alert.showAndWait();
+    }
+
     /**
      * 应用主题设置
      */

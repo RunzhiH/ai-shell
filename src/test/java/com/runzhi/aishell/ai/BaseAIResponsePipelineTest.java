@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +31,35 @@ class BaseAIResponsePipelineTest {
                 "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"partial\"}}]}")));
         assertThrows(IllegalStateException.class, () -> adapter.openAI(json(
                 "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":null,\"reasoning_content\":\"thinking\"}}]}")));
+    }
+
+    @Test void truncatedResponseFailsFastAndReportsTheActualTokenBudget() {
+        TestAdapter adapter = new TestAdapter();
+        AtomicInteger calls = new AtomicInteger();
+        String value = adapter.run(() -> {
+            calls.incrementAndGet();
+            return "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"partial\"}}]}";
+        }, adapter::openAI);
+
+        assertEquals(1, calls.get(), "a confirmed truncation must not be retried");
+        assertTrue(value.contains("output was truncated"), value);
+        assertTrue(value.contains("finish_reason=length"), value);
+        assertTrue(value.contains("max_tokens=1024"), value);
+        assertTrue(value.contains("Increase the maximum tokens in Settings"), value);
+        assertTrue(value.contains("shorten the task"), value);
+        assertFalse(value.contains("after 3 attempts"), value);
+    }
+
+    @Test void emptyResponsesStillRetryThreeTimes() {
+        TestAdapter adapter = new TestAdapter();
+        AtomicInteger calls = new AtomicInteger();
+        String value = adapter.run(() -> {
+            calls.incrementAndGet();
+            return " ";
+        }, root -> "");
+
+        assertEquals(3, calls.get());
+        assertTrue(value.startsWith("Error: Test returned no usable content after 3 attempts:"));
     }
 
     private static JsonObject json(String value) { return com.google.gson.JsonParser.parseString(value).getAsJsonObject(); }

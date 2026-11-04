@@ -63,6 +63,48 @@ public class SSHServiceImpl implements SSHService {
     // 每个Tab的独立工作目录
     private final Map<String, String> tabWorkingDirectories = new ConcurrentHashMap<>();
 
+    /** 会话状态变化的订阅者；视图据此刷新，避免各自保存一份状态副本。 */
+    private final java.util.List<Runnable> sessionStateListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** 配置与会话共用的身份口径：user@host:port。 */
+    public static String sessionIdentity(ConnectionParams params) {
+        if (params == null || params.getHost() == null) return "";
+        return (params.getUsername() == null ? "" : params.getUsername()) + "@" + params.getHost() + ":" + params.getPort();
+    }
+
+    @Override
+    public int activeSessionCount(ConnectionParams params) {
+        String identity = sessionIdentity(params);
+        if (identity.isEmpty()) return 0;
+        int active = 0;
+        for (Map.Entry<String, SSHConnectionManager> entry : tabConnections.entrySet()) {
+            SSHConnectionManager connection = entry.getValue();
+            if (connection == null || !connection.isConnected()) continue;
+            if (identity.equals(sessionIdentity(tabConnectionParams.get(entry.getKey())))) active++;
+        }
+        return active;
+    }
+
+    @Override
+    public void addSessionStateListener(Runnable listener) {
+        if (listener != null) sessionStateListeners.add(listener);
+    }
+
+    @Override
+    public void removeSessionStateListener(Runnable listener) {
+        sessionStateListeners.remove(listener);
+    }
+
+    private void notifySessionStateChanged() {
+        for (Runnable listener : sessionStateListeners) {
+            try {
+                listener.run();
+            } catch (RuntimeException failure) {
+                log.warn("会话状态监听器执行失败: {}", failure.getMessage());
+            }
+        }
+    }
+
     @Override
     public void disconnect() {
         // 断开所有Tab连接
@@ -76,6 +118,7 @@ public class SSHServiceImpl implements SSHService {
         tabConnectionParams.clear();
 
         disconnectAllFileTransferServices();
+        notifySessionStateChanged();
     }
 
     @Override
@@ -135,12 +178,15 @@ public class SSHServiceImpl implements SSHService {
                 registerFileTransferService(tabId, tabConnection);
 
                 log.info("Successfully created tab connection: {}", tabId);
+                // 注册完成后再通知：connect() 内的早期状态可能先于 tabConnections.put 被调度
+                notifySessionStateChanged();
                 return tabConnection;
             } else {
                 lastConnectionErrors.put(tabId, "SSH connection failed");
                 log.error("Failed to create tab connection: {} for host:{}:{}", tabId, host, port);
                 // 连接失败，清理资源
                 tabConnection.disconnect();
+                notifySessionStateChanged();
                 return null;
             }
         } catch (Exception e) {
@@ -148,6 +194,7 @@ public class SSHServiceImpl implements SSHService {
             log.error("Exception occurred while creating tab connection: {} for host:{}:{} - {}", tabId, host, port, e.getMessage(), e);
             // 连接失败，清理资源
             tabConnection.disconnect();
+            notifySessionStateChanged();
             return null;
         }
     }
@@ -196,17 +243,20 @@ public class SSHServiceImpl implements SSHService {
                 registerFileTransferService(tabId, tabConnection);
 
                 log.info("Successfully created tab connection with callback: {}", tabId);
+                notifySessionStateChanged();
                 return tabConnection;
             } else {
                 lastConnectionErrors.put(tabId, "SSH connection failed");
                 log.error("Failed to create tab connection: {} for host:{}:{}", tabId, host, port);
                 tabConnection.disconnect();
+                notifySessionStateChanged();
                 return null;
             }
         } catch (Exception e) {
             lastConnectionErrors.put(tabId, getErrorMessage(e));
             log.error("Exception occurred while creating tab connection: {} for host:{}:{} - {}", tabId, host, port, e.getMessage(), e);
             tabConnection.disconnect();
+            notifySessionStateChanged();
             return null;
         }
     }
@@ -245,6 +295,7 @@ public class SSHServiceImpl implements SSHService {
         }
         tabWorkingDirectories.remove(tabId);
         tabConnectionParams.remove(tabId);
+        notifySessionStateChanged();
     }
 
     @Override
@@ -355,6 +406,10 @@ public class SSHServiceImpl implements SSHService {
         }
     }
 
+    @Override public String canonicalDirectoryForTab(String tabId,String path) throws Exception {
+        return requireFileTransferService(tabId).canonicalDirectory(path);
+    }
+
     @Override
     public ObservableList<FileInfo> listFilesForTab(String tabId, String path) throws Exception {
         return requireFileTransferService(tabId).listFiles(path);
@@ -387,6 +442,50 @@ public class SSHServiceImpl implements SSHService {
                                   FileTransferService.OverwritePolicy overwritePolicy,
                                   FileTransferService.TransferControl control) throws Exception {
         requireFileTransferService(tabId).uploadFiles(localFilePaths, remoteDirPath, callback, overwritePolicy, control);
+    }
+
+    @Override
+    public boolean uploadPackedFolderForTab(String tabId, String localFolderPath, String remoteDirPath,
+                                            FileTransferService.ProgressCallback callback,
+                                            FileTransferService.OverwritePolicy overwritePolicy,
+                                            FileTransferService.TransferControl control) throws Exception {
+        java.nio.file.Path folder = java.nio.file.Path.of(localFolderPath);
+        com.runzhi.aishell.ssh.PackedTransferService packed = new com.runzhi.aishell.ssh.PackedTransferService();
+        java.nio.file.Path archive = packed.zipDirectory(folder, null);
+        String folderName = folder.getFileName().toString();
+        String remoteArchive = remoteDirPath.endsWith("/")
+                ? remoteDirPath + archive.getFileName()
+                : remoteDirPath + "/" + archive.getFileName();
+        String targetDir = remoteDirPath.endsWith("/")
+                ? remoteDirPath + folderName
+                : remoteDirPath + "/" + folderName;
+        try {
+            requireFileTransferService(tabId).uploadFiles(List.of(archive.toString()), remoteDirPath,
+                    callback, overwritePolicy, control);
+            SSHConnectionManager connection = tabConnections.get(tabId);
+            if (connection == null || !connection.isConnected()) {
+                throw new com.runzhi.aishell.common.exception.AIShellException(
+                        "SSH_CONNECTION_NOT_ESTABLISHED", "SSH connection is not established");
+            }
+            java.util.function.Function<String, String> runner = command -> {
+                try {
+                    return connection.executeCommand(command);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e.getMessage(), e);
+                }
+            };
+            boolean unpacked = packed.extractRemotely(runner, remoteArchive, targetDir);
+            if (unpacked) {
+                packed.removeRemoteArchive(runner, remoteArchive);
+            }
+            return unpacked;
+        } finally {
+            try {
+                java.nio.file.Files.deleteIfExists(archive);
+            } catch (java.io.IOException e) {
+                log.warn("清理本地临时压缩包失败: {}", e.getMessage());
+            }
+        }
     }
 
     @Override
@@ -663,9 +762,12 @@ public class SSHServiceImpl implements SSHService {
                     log.info("Rebuilding SFTP service for tab {} after reconnection", tabId);
                     registerFileTransferService(tabId, connection);
                 }
+                notifySessionStateChanged();
             }
             @Override
-            public void onDisconnected(String id) { }
+            public void onDisconnected(String id) {
+                notifySessionStateChanged();
+            }
         });
     }
 

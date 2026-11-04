@@ -39,7 +39,7 @@ public class AIHelperService {
         
         if (aiAdapter == null) {
             // 如果没有配置，尝试使用默认配置
-            AIConfigManager.getInstance().setCurrentConfig("默认OpenAI");
+            AIConfigManager.getInstance().useFallbackConfig("默认OpenAI");
             aiAdapter = AIConfigManager.getInstance().getCurrentAIAdapter();
         }
     }

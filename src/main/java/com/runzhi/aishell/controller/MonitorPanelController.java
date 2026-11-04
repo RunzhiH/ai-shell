@@ -43,6 +43,12 @@ public class MonitorPanelController extends BaseController implements Initializa
     // 图表配置
     private static final int MAX_DATA_POINTS = 60;                  // 最大数据点数
     private static final long CHART_TIME_RANGE = 60000;             // 图表显示时间范围（毫秒）
+    /** X 轴保留当前时间之后 5 秒，窗口共 65 秒。 */
+    private static final long CHART_FUTURE_PADDING = 5000;
+    /** 毫秒时间轴的主刻度步长：10 秒，65 秒窗口约 6-8 个刻度。 */
+    private static final long CHART_TICK_UNIT_MS = 10000;
+    /** 时间轴不生成无意义的次刻度，避免内部刻度计算量放大。 */
+    private static final int CHART_MINOR_TICK_COUNT = 0;
     private static final int REFRESH_INTERVAL_MS = 1000;            // 刷新间隔（毫秒）
 
     /** FXML 声明了这三个 metric-value 标签但此前控制器没有对应字段，卡片永远显示 "—"（2026-10-23 审计 UI-1） */
@@ -170,6 +176,44 @@ public class MonitorPanelController extends BaseController implements Initializa
         }
     }
 
+    /**
+     * 绑定当前活动会话（每次打开监控面板时调用）。
+     * FXML 只初始化一次，initialize 里的监听器看不到打开之前已有的 current_active_tab，
+     * 必须由外部在 setSshService 之后主动触发一次。
+     */
+    public void bindCurrentSession() {
+        String activeTab = com.runzhi.aishell.common.util.ParameterManager.getInstance()
+                .get("current_active_tab", String.class);
+        if (activeTab != null) {
+            setSystemMonitorForTab(activeTab);
+        }
+    }
+
+    /**
+     * 等待目标会话的 SSH 连接就绪后重试绑定。约 12 秒内每 600ms 检查一次；
+     * 期间用户切到别的会话则放弃（currentTabId 已变）。
+     */
+    private void awaitConnectionThenBind(String tabId) {
+        if (tabId == null || sshService == null) return;
+        final int[] attempts = { 0 };
+        retryOnce(tabId, attempts);
+    }
+
+    private void retryOnce(String tabId, int[] attempts) {
+        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
+        pause.setOnFinished(event -> {
+            if (!java.util.Objects.equals(tabId, currentTabId)) return; // 用户已切到别的会话
+            attempts[0]++;
+            SSHConnectionManager connection = sshService.getTabConnection(tabId);
+            if (connection != null && connection.isConnected()) {
+                setSystemMonitorForTab(tabId);
+            } else if (attempts[0] < 20) {
+                retryOnce(tabId, attempts);
+            }
+        });
+        pause.play();
+    }
+
     @FXML
     public void refreshMonitoring() {
         // 重新启动监控
@@ -236,8 +280,12 @@ public class MonitorPanelController extends BaseController implements Initializa
                     currentSystemMonitor = null;
                 }
                 clearMetricsDisplay(); // 清空显示
-                
-                log.info("Stopped monitoring for tab: {} (not connected)", tabId);
+
+                // 连接是异步建立的：current_active_tab 发出时往往还没注册完毕，
+                // 等它就绪后重试绑定，否则监控面板永远显示「未连上」。
+                awaitConnectionThenBind(tabId);
+
+                log.info("Stopped monitoring for tab: {} (not connected, awaiting retry)", tabId);
             }
         } else {
             // 如果没有有效的参数，停止监控
@@ -305,9 +353,7 @@ public class MonitorPanelController extends BaseController implements Initializa
             cpuChart.getData().add(cpuSeries);
             cpuChart.setCreateSymbols(false); // 不显示数据点符号，只显示线条
             // 移除固定范围设置，让图表自动缩放
-            if (cpuXAxis != null) {
-                cpuXAxis.setLabel("时间");
-            }
+            configureTimeAxis(cpuXAxis);
             if (cpuYAxis != null) {
                 cpuYAxis.setLabel("%");
                 cpuYAxis.setUpperBound(100);
@@ -320,9 +366,7 @@ public class MonitorPanelController extends BaseController implements Initializa
             memorySeries.setName("内存使用率");
             memoryChart.getData().add(memorySeries);
             memoryChart.setCreateSymbols(false);
-            if (memoryXAxis != null) {
-                memoryXAxis.setLabel("时间");
-            }
+            configureTimeAxis(memoryXAxis);
             if (memoryYAxis != null) {
                 memoryYAxis.setLabel("%");
                 memoryYAxis.setUpperBound(100);
@@ -335,9 +379,7 @@ public class MonitorPanelController extends BaseController implements Initializa
             diskSeries.setName("磁盘使用率");
             diskChart.getData().add(diskSeries);
             diskChart.setCreateSymbols(false);
-            if (diskXAxis != null) {
-                diskXAxis.setLabel("时间");
-            }
+            configureTimeAxis(diskXAxis);
             if (diskYAxis != null) {
                 diskYAxis.setLabel("%");
                 diskYAxis.setUpperBound(100);
@@ -352,14 +394,47 @@ public class MonitorPanelController extends BaseController implements Initializa
             networkDownSeries.setName("下行");
             networkChart.getData().addAll(networkUpSeries, networkDownSeries);
             networkChart.setCreateSymbols(false);
-            if (networkXAxis != null) {
-                networkXAxis.setLabel("时间");
-            }
+            configureTimeAxis(networkXAxis);
             if (networkYAxis != null) {
                 networkYAxis.setLabel("KB/s");
             }
         }
     }
+
+    /**
+     * 四个趋势图共享的毫秒时间轴配置：固定 10 秒主刻度、无次刻度、关闭动画与
+     * forceZeroInRange，避免 epoch 毫秒范围在默认 10ms 步长下产生数千刻度。
+     */
+    private void configureTimeAxis(NumberAxis axis) {
+        if (axis == null) return;
+        axis.setLabel("时间");
+        axis.setAutoRanging(false);
+        axis.setForceZeroInRange(false);
+        axis.setAnimated(false);
+        axis.setTickUnit(CHART_TICK_UNIT_MS);
+        axis.setMinorTickCount(CHART_MINOR_TICK_COUNT);
+        axis.setMinorTickVisible(false);
+        axis.setTickLabelsVisible(false);
+        updateTimeAxis(axis, System.currentTimeMillis());
+    }
+
+    /**
+     * 将时间轴移动到当前 65 秒窗口，并保证中间状态不出现 lower &gt;= upper。
+     * 时钟大幅回跳时先降 lower，其余情况先抬 upper，避免属性监听器在两次赋值间看到倒置范围。
+     */
+    private static void updateTimeAxis(NumberAxis axis, long currentTime) {
+        if (axis == null) return;
+        double newLower = currentTime - CHART_TIME_RANGE;
+        double newUpper = currentTime + CHART_FUTURE_PADDING;
+        if (newUpper > axis.getLowerBound()) {
+            axis.setUpperBound(newUpper);
+            axis.setLowerBound(newLower);
+        } else {
+            axis.setLowerBound(newLower);
+            axis.setUpperBound(newUpper);
+        }
+    }
+
     private void initializeStorageTable() {
         // 初始化存储表格列
         if (pathColumn != null) {
@@ -534,31 +609,11 @@ public class MonitorPanelController extends BaseController implements Initializa
             }
         }
     
-        // 动态调整 X 轴范围以显示最新的数据点
-        if (cpuXAxis != null && cpuSeries != null && !cpuSeries.getData().isEmpty()) {
-            long minTime = currentTime - CHART_TIME_RANGE; // 显示最近 1 分钟的数据
-            cpuXAxis.setAutoRanging(false);
-            cpuXAxis.setLowerBound(minTime);
-            cpuXAxis.setUpperBound(currentTime + 5000); // 稍微超出当前时间
-        }
-        if (memoryXAxis != null && memorySeries != null && !memorySeries.getData().isEmpty()) {
-            long minTime = currentTime - CHART_TIME_RANGE;
-            memoryXAxis.setAutoRanging(false);
-            memoryXAxis.setLowerBound(minTime);
-            memoryXAxis.setUpperBound(currentTime + 5000);
-        }
-        if (diskXAxis != null && diskSeries != null && !diskSeries.getData().isEmpty()) {
-            long minTime = currentTime - CHART_TIME_RANGE;
-            diskXAxis.setAutoRanging(false);
-            diskXAxis.setLowerBound(minTime);
-            diskXAxis.setUpperBound(currentTime + 5000);
-        }
-        if (networkXAxis != null && networkUpSeries != null && !networkUpSeries.getData().isEmpty()) {
-            long minTime = currentTime - CHART_TIME_RANGE;
-            networkXAxis.setAutoRanging(false);
-            networkXAxis.setLowerBound(minTime);
-            networkXAxis.setUpperBound(currentTime + 5000);
-        }
+        // 四个趋势图共用同一毫秒窗口与刻度策略；空数据时也保持时间轴连续。
+        updateTimeAxis(cpuXAxis, currentTime);
+        updateTimeAxis(memoryXAxis, currentTime);
+        updateTimeAxis(diskXAxis, currentTime);
+        updateTimeAxis(networkXAxis, currentTime);
     }
 
     private double parseNetworkSpeed(String speedStr) {

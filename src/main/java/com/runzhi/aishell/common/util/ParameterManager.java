@@ -55,7 +55,7 @@ public class ParameterManager {
     public void put(String key, Object value) {
         parameters.put(key, value);
         parameterTimestamps.put(key, System.currentTimeMillis());
-        log.debug("Parameter stored: {}", key);
+//        log.debug("Parameter stored: {}", key);
     }
     
     /**

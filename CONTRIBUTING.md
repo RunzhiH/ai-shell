@@ -14,27 +14,42 @@
 ./mvnw javafx:run       # 本地启动应用
 ```
 
-- 构建产物：`target/AIShell-1.0.0.jar`
+- 构建产物：`target/AIShell-1.1.0.jar`
 - 覆盖率报告：`target/site/jacoco/index.html`
 - 打包 Windows 客户端（exe / 便携包 / MSI）：`packaging/build-package.ps1`。
   脚本会自动找 JAVA_HOME 或 PATH 里的 JDK；MSI 还需要 WiX 3.11，
   去 https://github.com/wixtoolset/wix3/releases 下载 wix311-binaries.zip 解压到 `packaging/wix311`
 
-## 分支模型
+## 仓库结构
+
+这个项目有两个仓库，职责不同：
+
+| 仓库 | 地址 | 职责 |
+| --- | --- | --- |
+| 公开发布仓 | GitHub [RunzhiH/ai-shell](https://github.com/RunzhiH/ai-shell) | 只放发版内容，只有 `public` 一个分支，每个版本对应一个压缩提交；外部贡献在这里提 PR |
+| 开发仓（私有） | Gitee `hongrunzhi/ai-shell` | 日常开发，保留完整提交历史 |
+
+**公开仓库不接受细粒度的开发提交**——它的每个提交都对应一个发布版本。日常开发在私有仓库进行：
 
 | 分支 | 角色 |
 | --- | --- |
-| `master` | 稳定版本分支，受保护，禁止直接推送，仅通过审查通过的 PR 合并，对应发布版本 |
-| `dev` | 开发分支，日常开发在此集成，合并需代码审查 |
-| `feature/xxx` / `fix/xxx` / `release/xxx` | 功能 / 修复 / 发布分支，从 `dev` 拉出 |
+| `dev` | 开发主线，日常开发在此集成，合并需代码审查 |
+| `release/x.y.z` | 发版整理分支，从 `dev` 拉出；验证通过后压缩成一个提交，推到公开仓库的 `public` |
 
 ## 提交流程
 
-1. Fork 本仓库
-2. 从 `dev` 创建分支：`git checkout -b feature/your-feature`
-3. 提交代码，建议使用约定式提交信息（`feat:` / `fix:` / `docs:` / `chore:`）
-4. 向 `dev` 发起 Pull Request，等待审查（至少 1 人）并确认 CI 通过
-5. 审查通过后合并到 `dev`；`dev` 稳定后由维护者通过 PR 合并到 `master` 并打 tag 发版
+**外部贡献者**（只能看到公开仓库）：
+
+1. Fork 公开仓库（GitHub `RunzhiH/ai-shell`）
+2. 从 `public` 创建分支
+3. 向 `public` 发起 Pull Request，等待审查（至少 1 人）并确认 CI 通过
+
+**内部开发**（有私有仓库权限）：
+
+1. 从 `dev` 创建分支：`git checkout -b feature/your-feature`
+2. 提交代码，建议使用约定式提交信息（`feat:` / `fix:` / `docs:` / `chore:`）
+3. 向 `dev` 发起 Pull Request，等待审查（至少 1 人）并确认 CI 通过
+4. 发版时由维护者从 `dev` 拉 `release/x.y.z`，整理验证后压缩成一个提交推到公开仓库的 `public` 并打 tag
 
 ## 代码规范
 

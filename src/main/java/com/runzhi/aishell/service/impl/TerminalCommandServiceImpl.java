@@ -13,6 +13,7 @@ import com.runzhi.aishell.agent.CommandRisk;
 import com.runzhi.aishell.agent.CommandRiskAssessor;
 import com.runzhi.aishell.agent.ReadOnlyCommandWhitelist;
 import com.runzhi.aishell.common.ai.AIShellModuleManager;
+import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.common.terminal.ShellCommandSimulator;
 import com.runzhi.aishell.service.TerminalCommandService;
 import com.runzhi.aishell.service.TerminalConnectionService;
@@ -59,6 +60,8 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
     private final Map<Tab, String> tabCurrentWorkingDirectories = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<Tab, Future<?>> activeAIRequests = new ConcurrentHashMap<>();
     private final Map<Tab, AgentTaskState> activeAgentTasks = new ConcurrentHashMap<>();
+    private final Map<Tab, AgentTaskState> failedAgentTasks = new ConcurrentHashMap<>();
+    private final Map<Tab, javafx.animation.Timeline> stepProgressTimers = new ConcurrentHashMap<>();
     private final Map<String, String> agentConversationContexts = new ConcurrentHashMap<>();
     private static final int MAX_AGENT_CONTEXT = 256 * 1024;
 
@@ -67,6 +70,7 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
         String context = "";
         int commands;
         volatile boolean cancelled;
+        volatile com.runzhi.aishell.agent.AgentProposal proposal;
         AgentTaskState(String goal) { this.goal = goal; }
     }
 
@@ -178,8 +182,13 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
         if (tab == null) return;
         Future<?> request = activeAIRequests.remove(tab);
         if (request != null && !request.isDone()) request.cancel(true);
+        stopStepProgressTimer(tab);
         AgentTaskState task = activeAgentTasks.remove(tab);
-        if (task != null) task.cancelled = true;
+        if (task != null) {
+            task.cancelled = true;
+            if(task.proposal!=null) task.proposal.invalidate();
+        }
+        failedAgentTasks.remove(tab);
         publish(tab, AgentActivityBus.Kind.CANCELLED, "用户已停止当前 Agent 请求");
         writeAIFeedback(tab, "[AI] 已停止当前请求");
     }
@@ -198,12 +207,17 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
         }
         
         AgentTaskState oldTask = activeAgentTasks.remove(tab);
-        if (oldTask != null) oldTask.cancelled = true;
+        if (oldTask != null) {
+            oldTask.cancelled = true;
+            if(oldTask.proposal!=null) oldTask.proposal.invalidate();
+        }
         AgentTaskState task = new AgentTaskState(command.trim());
         String previousContext = agentConversationContexts.get(agentConversationKey(tab));
         task.context = (previousContext == null ? "" : previousContext)
                 + "\n\nUSER_FOLLOW_UP:\n" + command.trim();
         activeAgentTasks.put(tab, task);
+        // 新目标开始后，旧失败任务的“重试上一步”不再可用
+        failedAgentTasks.remove(tab);
         requestNextAgentStep(tab, task);
     }
 
@@ -211,11 +225,14 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
         if (!isCurrentTask(tab, task)) return;
         publish(tab, AgentActivityBus.Kind.STATUS,
                 task.commands == 0 ? "正在规划任务" : "正在结合第 " + task.commands + " 步结果规划下一步");
+        startStepProgressTimer(tab, task);
         Future<?> request = getAICommandProcessor().requestAgentStep(requireTabId(tab), task.goal, task.context,
                 decision -> {
                     activeAIRequests.remove(tab);
+                    stopStepProgressTimer(tab);
                     if (!isCurrentTask(tab, task)) return;
                     if (decision.type() == AgentDecision.Type.COMPLETE) {
+                        failedAgentTasks.remove(tab);
                         finishAgentTask(tab, task, AgentActivityBus.Kind.SUCCESS, decision.content());
                     } else if (decision.type() == AgentDecision.Type.ASK) {
                         task.context = decision.context();
@@ -226,6 +243,46 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
                     }
                 }, feedback -> publishAgentFeedback(tab, feedback));
         activeAIRequests.put(tab, request);
+    }
+
+    /** 长任务等待反馈：每 10 秒在状态行提示“仍在等待模型响应”，避免用户误以为卡死。 */
+    private void startStepProgressTimer(Tab tab, AgentTaskState task) {
+        stopStepProgressTimer(tab);
+        long started = System.currentTimeMillis();
+        javafx.animation.Timeline timer = new javafx.animation.Timeline(new javafx.animation.KeyFrame(
+                javafx.util.Duration.seconds(10), event -> {
+            if (!isCurrentTask(tab, task)) { stopStepProgressTimer(tab); return; }
+            long elapsed = (System.currentTimeMillis() - started) / 1000;
+            publish(tab, AgentActivityBus.Kind.PROGRESS, I18n.tr("agent.progress.waiting", task.commands, elapsed));
+        }));
+        timer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        timer.play();
+        stepProgressTimers.put(tab, timer);
+    }
+
+    private void stopStepProgressTimer(Tab tab) {
+        javafx.animation.Timeline timer = stepProgressTimers.remove(tab);
+        if (timer != null) timer.stop();
+    }
+
+    @Override
+    public boolean hasFailedAgentStep(Tab tab) {
+        return tab != null && failedAgentTasks.containsKey(tab);
+    }
+
+    @Override
+    public void retryFailedAgentStep(Tab tab) {
+        if (tab == null) return;
+        AgentTaskState failed = failedAgentTasks.remove(tab);
+        if (failed == null) {
+            publish(tab, AgentActivityBus.Kind.STATUS, I18n.tr("agent.retry.nothing"));
+            return;
+        }
+        // 沿用原目标与已积累的上下文重新请求模型，用户无需重新输入
+        failed.cancelled = false;
+        activeAgentTasks.put(tab, failed);
+        publish(tab, AgentActivityBus.Kind.STATUS, I18n.tr("agent.retry.retrying"));
+        requestNextAgentStep(tab, failed);
     }
 
     private boolean isCurrentTask(Tab tab, AgentTaskState task) {
@@ -271,21 +328,41 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
             return;
         }
         java.util.concurrent.atomic.AtomicBoolean decided = new java.util.concurrent.atomic.AtomicBoolean();
-        AgentActivityBus.publishApproval(tabId, "[" + risk.label() + "] " + command, approved -> {
+        SSHService approvalSsh = getSSHService();
+        var originalConnection = approvalSsh == null ? null : approvalSsh.getTabConnection(tabId);
+        var originalSession = originalConnection == null ? null : originalConnection.getSession();
+        var params = approvalSsh == null ? null : approvalSsh.getTabConnectionParams(tabId);
+        var context = new com.runzhi.aishell.agent.AgentProposal.Context(
+                String.valueOf(tab.getProperties().getOrDefault("agentTaskId", "default")),
+                params == null ? "—" : params.getUsername(),
+                params == null ? tabId : params.getHost()+":"+params.getPort(),
+                approvalSsh == null ? "—" : approvalSsh.getCurrentWorkingDirectoryForTab(tabId), command,risk);
+        task.proposal = AgentActivityBus.publishApproval(tabId, "[" + risk.label() + "] " + command, context,
+                () -> originalConnection != null && originalSession != null
+                        && originalConnection.isConnected() && originalConnection.getSession() == originalSession
+                        && approvalSsh.getTabConnection(tabId) == originalConnection
+                        && java.util.Objects.equals(context.directory(),approvalSsh.getCurrentWorkingDirectoryForTab(tabId)),
+                approved -> Platform.runLater(() -> {
             if (!decided.compareAndSet(false, true)) return;
-            if (approved) {
+            if (!isCurrentTask(tab,task)) return;
+            if (approved && originalConnection.isConnected() && originalConnection.getSession()==originalSession
+                    && approvalSsh.getTabConnection(tabId)==originalConnection
+                    && java.util.Objects.equals(context.directory(),approvalSsh.getCurrentWorkingDirectoryForTab(tabId))) {
                 audit.record("command_approved", tabId, risk, command, "approved");
                 publish(tab, AgentActivityBus.Kind.EXECUTION, "用户已批准：" + command);
                 writeAIFeedback(tab, "[AI] 已确认，正在执行...");
                 executeAgentStep(tab, task, command);
             } else {
                 audit.record("command_rejected", tabId, risk, command, "rejected");
-                publish(tab, AgentActivityBus.Kind.CANCELLED, "用户拒绝执行：" + command);
+                var state=task.proposal==null?null:task.proposal.state();
+                String reason=state==com.runzhi.aishell.agent.AgentProposal.State.EXPIRED?"审批已超时 · 需重新申请：":
+                        state==com.runzhi.aishell.agent.AgentProposal.State.INVALID?"目标已失效 · 需新建任务：":"用户拒绝执行：";
+                publish(tab, AgentActivityBus.Kind.CANCELLED, reason + command);
                 task.cancelled = true;
                 activeAgentTasks.remove(tab, task);
                 writeAIFeedback(tab, "[AI] 已取消执行：" + command);
             }
-        });
+        }));
     }
 
     private void executeAgentStep(Tab tab, AgentTaskState task, String command) {
@@ -402,20 +479,30 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
             kind = AgentActivityBus.Kind.TOOL;
             text = text.substring("[AGENT_TOOL_RESULT]".length()).trim();
             mirrorAgentToolResult(tab, text);
+        } else if (text.startsWith("[AGENT_PROGRESS]")) {
+            // 运行步骤进度只更新状态行（控制器把 PROGRESS 路由到状态行，不进历史）
+            kind = AgentActivityBus.Kind.PROGRESS;
+            text = text.substring("[AGENT_PROGRESS]".length()).trim();
         } else {
             kind = lower.contains("error") || text.contains("错误") || text.contains("失败")
                     ? AgentActivityBus.Kind.ERROR : AgentActivityBus.Kind.TOOL;
         }
         publish(tab, kind, text);
         if (kind == AgentActivityBus.Kind.ERROR) {
+            stopStepProgressTimer(tab);
             AgentTaskState failed = activeAgentTasks.remove(tab);
-            if (failed != null) failed.cancelled = true;
+            if (failed != null) {
+                failed.cancelled = true;
+                // 保留目标与上下文，供错误卡片“重试上一步”使用
+                failedAgentTasks.put(tab, failed);
+            }
             activeAIRequests.remove(tab);
         }
         String prefix = switch (kind) {
             case THINK -> "[AI 思考] ";
             case RESPONSE -> "[AI 响应] ";
             case ERROR -> "[AI] 错误：";
+            case PROGRESS -> "[AI] ";
             default -> "[AI] ";
         };
         writeAIFeedback(tab, prefix + text);
@@ -1035,20 +1122,8 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
      * 获取 Tab ID（辅助方法）
      */
     private String getTabId(Tab tab) {
-        if (tab == null) return null;
-        
-        // 尝试从 Tab 的属性中获取 ID
-        if (tab.getId() != null) {
-            return tab.getId();
-        }
-        
-        // 尝试从 Tab 的 userData 中获取 ID
-        if (tab.getUserData() != null) {
-            return String.valueOf(tab.getUserData());
-        }
-        
-        // 如果都没有，使用 Tab 的文本作为 ID
-        return tab.getText() != null ? tab.getText() : String.valueOf(System.identityHashCode(tab));
+        // 身份只能是稳定 id：主机名/文本不应承担身份（v6 阶段 2）
+        return tab == null ? null : tab.getId();
     }
     
     /**

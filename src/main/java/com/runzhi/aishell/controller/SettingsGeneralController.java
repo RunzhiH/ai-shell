@@ -34,6 +34,7 @@ public class SettingsGeneralController {
     @FXML private ComboBox<String> startupPageCombo;
     @FXML private Slider sidebarWidthSlider;
     @FXML private CheckBox autoSaveCheck;
+    @FXML private CheckBox agentHistoryCheck;
     @FXML private CheckBox autoStartCheck;
 
     private final Preferences prefs = Preferences.userNodeForPackage(SettingsGeneralController.class);
@@ -56,6 +57,7 @@ public class SettingsGeneralController {
         fontSizeSpinner.getValueFactory().setValue(prefs.getInt("general.fontSize", 14));
         sidebarWidthSlider.setValue(prefs.getDouble("general.sidebarWidth", 280));
         autoSaveCheck.setSelected(prefs.getBoolean("general.autoSave", true));
+        agentHistoryCheck.setSelected(prefs.getBoolean("general.agentHistory", true));
         autoStartCheck.setDisable(!autoStartManager.isSupported());
         autoStartCheck.setSelected(autoStartManager.isEnabled());
     }
@@ -70,6 +72,7 @@ public class SettingsGeneralController {
         prefs.put("general.startupPage", startupPageFromPreference(startupPageCombo.getValue()).name());
         prefs.putDouble("general.sidebarWidth", sidebarWidthSlider.getValue());
         prefs.putBoolean("general.autoSave", autoSaveCheck.isSelected());
+        prefs.putBoolean("general.agentHistory", agentHistoryCheck.isSelected());
         try {
             autoStartManager.setEnabled(autoStartCheck.isSelected());
             prefs.putBoolean("general.autoStart", autoStartCheck.isSelected());

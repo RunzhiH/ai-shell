@@ -52,7 +52,7 @@ public class QwenAdapter extends BaseAIAdapter implements StreamingAIAdapter {
             JsonObject parameters = new JsonObject();
             parameters.addProperty("temperature", currentTemperature());
             parameters.addProperty("top_p", 0.95);
-            parameters.addProperty("max_tokens", currentMaxTokens());
+            parameters.addProperty("max_tokens", effectiveMaxTokens());
             requestBody.add("parameters", parameters);
 
             // 设置请求头

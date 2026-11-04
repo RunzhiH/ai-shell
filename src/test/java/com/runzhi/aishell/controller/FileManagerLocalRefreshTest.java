@@ -37,6 +37,26 @@ class FileManagerLocalRefreshTest {
     }
 
     @Test
+    void failedNavigationKeepsSuccessfulDirectoryAndTypedInput() throws Exception {
+        Path directory=Files.createTempDirectory("fm-retain"); Files.createFile(directory.resolve("retained.txt"));
+        var controller=loadPanelWithLocalPath(directory.toString());
+        ObservableList<FileInfo> files=getPrivate(controller,"localFiles");
+        long deadline=System.currentTimeMillis()+6000;
+        while(System.currentTimeMillis()<deadline && !containsName(files,"retained.txt")) Thread.sleep(25);
+        assertTrue(containsName(files,"retained.txt"));
+        String missing=directory.resolve("missing").toString();
+        runOnFx(()->{TextField path=getPrivate(controller,"localPathField");path.setText(missing);invokePrivate(controller,"navigateLocalPath");});
+        deadline=System.currentTimeMillis()+6000;
+        while(System.currentTimeMillis()<deadline && getPrivate(controller,"requestedLocalDirectory")!=null) Thread.sleep(25);
+        runOnFx(()->{
+            assertEquals(missing,((TextField)getPrivate(controller,"localPathField")).getText());
+            assertEquals(directory,getPrivate(controller,"localDirectory"));
+            assertTrue(containsName(files,"retained.txt"));
+            controller.onWindowClosing();
+        });
+    }
+
+    @Test
     void refreshLocalListReloadsTableContents() throws Exception {
         Path dir = Files.createTempDirectory("fm-refresh-parent");
         Path sub = Files.createDirectory(dir.resolve("child"));

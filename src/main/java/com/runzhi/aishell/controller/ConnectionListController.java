@@ -80,6 +80,12 @@ public class ConnectionListController extends BaseController {
 
     private SSHService sshService;
 
+    /** 注入 SSH 服务后立即按真实会话刷新状态。 */
+    public void setSshService(SSHService sshService) {
+        this.sshService = sshService;
+        refreshStatuses();
+    }
+
     private ObservableList<ConnectionViewModel> connections;
 
     public void initialize() {
@@ -236,15 +242,19 @@ public class ConnectionListController extends BaseController {
             String name = (params.getProfileName() != null && !params.getProfileName().isBlank())
                     ? params.getProfileName()
                     : com.runzhi.aishell.ssh.SSHConnectionManager.buildDisplayName(params);
-            connections.add(new ConnectionViewModel(
+            ConnectionViewModel viewModel = new ConnectionViewModel(
                     name,
                     params.getHost(),
                     String.valueOf(params.getPort()),
                     params.getUsername(),
                     "SSH", // 默认协议为SSH，因为ConnectionParams类中没有getProtocol方法
                     formatLastUsedTime(params.getLastUsed()),
-                    params.isConnected() ? "已连接" : "未连接"
-            ));
+                    ""
+            );
+            // 配置状态来自 SSH 服务里的真实会话，不再读取持久化的 isConnected 标志
+            viewModel.setParams(params);
+            viewModel.setActive(sshService != null && sshService.activeSessionCount(params) > 0);
+            connections.add(viewModel);
         }
 
         connectionTable.setItems(connections);
@@ -488,10 +498,20 @@ public class ConnectionListController extends BaseController {
         return lastUsed.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 
+    /** 重新从 SSH 会话记录推导每个配置的实时状态；连接、断开、关闭标签后调用。 */
+    public void refreshStatuses() {
+        if (connections == null) return;
+        for (ConnectionViewModel viewModel : connections) {
+            ConnectionParams params = viewModel.getParams();
+            viewModel.setActive(params != null && sshService != null && sshService.activeSessionCount(params) > 0);
+        }
+        updateStatistics();
+    }
+
     private void updateStatistics() {
         if (connections != null) {
             int total = connections.size();
-            long connected = connections.stream().filter(c -> "已连接".equals(c.getStatus())).count();
+            long connected = connections.stream().filter(ConnectionViewModel::isActive).count();
             long disconnected = total - connected;
 
             if (totalCountLabel != null) totalCountLabel.setText("总数：" + total);
@@ -516,6 +536,18 @@ public class ConnectionListController extends BaseController {
         private SimpleStringProperty protocol;
         private SimpleStringProperty lastUsed;
         private SimpleStringProperty status;
+        /** 该配置对应的 SSH 配置对象，用于查询实时会话状态。 */
+        private ConnectionParams params;
+        /** 是否至少有一个活动会话；统计口径只看这个布尔值，不比较显示文案。 */
+        private boolean active;
+
+        /** 状态文本由 active 推导，避免各处各写一套判断。 */
+        public void setActive(boolean active) {
+            this.active = active;
+            if (this.status != null) {
+                this.status.set(active ? I18n.tr("main.connected") : I18n.tr("main.disconnected"));
+            }
+        }
 
         public ConnectionViewModel(String name, String host, String port, String username, 
                                  String protocol, String lastUsed, String status) {

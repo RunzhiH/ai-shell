@@ -52,9 +52,8 @@ public class ThemeManager {
         this.currentTheme = theme;
 
         Runnable apply = () -> {
-            scene.getStylesheets().clear();
             String css = getClass().getResource(theme.getCssPath()).toExternalForm();
-            scene.getStylesheets().add(css);
+            if(!scene.getStylesheets().equals(java.util.List.of(css))) scene.getStylesheets().setAll(css);
             log.info("主题已切换为：{} ({})", theme.getDisplayName(), theme.getCssPath());
         };
 

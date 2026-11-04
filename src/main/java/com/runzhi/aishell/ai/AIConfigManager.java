@@ -35,8 +35,16 @@ public class AIConfigManager {
     // 读不加锁，写整体复制，避免并发修改异常。
     private final List<AIConfig> configs = new CopyOnWriteArrayList<>();
     private volatile AIConfig currentConfig;
+    /** 用户明确选择并持久化的默认配置名；临时回退不会覆盖它。 */
+    private volatile String defaultConfigName;
     private Gson gson;
     private static final String ENCRYPTED_PREFIX = "enc:";
+    private static final String DEFAULT_CONFIG_KEY = "ai.default.config";
+    /** 旧版本键，仅用于迁移已记录的默认选择。 */
+    private static final String LEGACY_CURRENT_CONFIG_KEY = "ai.current.config";
+    private static final String FALLBACK_CONFIG_NAME = "默认OpenAI";
+    /** Agent 需要完整 JSON/工具调用，至少给它比普通对话更大的输出预算。 */
+    static final int AGENT_MIN_MAX_TOKENS = 4096;
     private final Preferences preferences = Preferences.userNodeForPackage(AIConfigManager.class);
 
     private AIConfigManager() {
@@ -63,6 +71,9 @@ public class AIConfigManager {
         for (int i = 0; i < configs.size(); i++) {
             if (java.util.Objects.equals(configs.get(i).getName(), config.getName())) {
                 configs.set(i, config); // 更新现有配置
+                if (currentConfig != null && java.util.Objects.equals(currentConfig.getName(), config.getName())) {
+                    currentConfig = config;
+                }
                 saveConfigs();
                 return;
             }
@@ -75,6 +86,10 @@ public class AIConfigManager {
         configs.removeIf(config -> java.util.Objects.equals(config.getName(), name));
         if (currentConfig != null && currentConfig.getName().equals(name)) {
             currentConfig = null;
+        }
+        if (java.util.Objects.equals(defaultConfigName, name)) {
+            defaultConfigName = null;
+            clearDefaultPreference();
         }
         saveConfigs();
     }
@@ -95,7 +110,7 @@ public class AIConfigManager {
         for (AIConfig config : configs) {
             if (java.util.Objects.equals(config.getName(), name)) {
                 currentConfig = config;
-                preferences.put("ai.current.config", name);
+                rememberDefault(name);
                 return;
             }
         }
@@ -105,6 +120,72 @@ public class AIConfigManager {
         return currentConfig;
     }
 
+    /** 用户明确记录、用于下次启动的默认配置名。 */
+    public String getDefaultConfigName() {
+        return defaultConfigName;
+    }
+
+    /** 明确设置默认配置：切换当前配置并立即持久化，供设置页/模型切换使用。 */
+    public boolean setDefaultConfig(String name) {
+        AIConfig config = getConfigByName(name);
+        if (config == null) return false;
+        currentConfig = config;
+        rememberDefault(config.getName());
+        return true;
+    }
+
+    /**
+     * 运行期临时回退（例如当前配置暂不可用）：只改变内存中的 currentConfig，
+     * 不覆盖用户记录的默认选择，避免下次启动被回退值带偏。
+     */
+    public void useFallbackConfig(String name) {
+        AIConfig config = getConfigByName(name);
+        if (config != null) currentConfig = config;
+    }
+
+    private void rememberDefault(String name) {
+        if (name == null || name.isBlank()) return;
+        defaultConfigName = name;
+        preferences.put(DEFAULT_CONFIG_KEY, name);
+        // 同步旧键，保证回退到旧版本时仍能读到同一个默认选择。
+        preferences.put(LEGACY_CURRENT_CONFIG_KEY, name);
+        flushPreferences();
+    }
+
+    private void clearDefaultPreference() {
+        preferences.remove(DEFAULT_CONFIG_KEY);
+        preferences.remove(LEGACY_CURRENT_CONFIG_KEY);
+        flushPreferences();
+    }
+
+    private void flushPreferences() {
+        try {
+            preferences.flush();
+        } catch (java.util.prefs.BackingStoreException failure) {
+            logger.warn("保存 AI 默认配置选择失败: {}", failure.getMessage());
+        }
+    }
+
+    /** 启动/重新加载时恢复默认选择；旧键只在没有新键时读取。 */
+    private void restoreDefaultConfig() {
+        String preferred = preferences.get(DEFAULT_CONFIG_KEY, null);
+        if (preferred == null || preferred.isBlank()) {
+            preferred = preferences.get(LEGACY_CURRENT_CONFIG_KEY, null);
+        }
+        if (preferred == null || preferred.isBlank()) preferred = "用户设置";
+        AIConfig selected = getConfigByName(preferred);
+        if (selected == null) selected = getConfigByName(FALLBACK_CONFIG_NAME);
+        if (selected == null && !configs.isEmpty()) selected = configs.get(0);
+        currentConfig = selected;
+        if (selected == null) {
+            defaultConfigName = null;
+            return;
+        }
+        rememberDefault(selected.getName());
+        logger.info("默认 AI 配置: {} (type={}, model={})",
+                selected.getName(), selected.getType(), selected.getModel());
+    }
+
     public AIAdapter getCurrentAIAdapter() {
         if (currentConfig == null) {
             return null;
@@ -112,44 +193,49 @@ public class AIConfigManager {
         
         return createAdapterForConfig(currentConfig);
     }
+
+    /**
+     * Agent 专用适配器：在用户配置基础上保证至少 AGENT_MIN_MAX_TOKENS 的输出预算。
+     * 只影响本次 Agent 请求，不修改也不持久化用户设置。
+     */
+    public AIAdapter getAgentAIAdapter() {
+        AIConfig config = currentConfig;
+        if (config == null) return null;
+        if (config.getMaxTokens() >= AGENT_MIN_MAX_TOKENS) return createAdapterForConfig(config);
+        AIConfig agentConfig = gson.fromJson(gson.toJson(config), AIConfig.class);
+        if (agentConfig == null) return null;
+        agentConfig.setMaxTokens(AGENT_MIN_MAX_TOKENS);
+        return createAdapterForConfig(agentConfig);
+    }
     
     /**
      * 根据配置创建对应的AI适配器
      */
     private AIAdapter createAdapterForConfig(AIConfig config) {
-        switch (config.getType()) {
-            case "OpenAI":
-                OpenAIAdapter openAI = new OpenAIAdapter(config.getApiKey(), config.getModel());
-                openAI.updateConfig(config);
-                return openAI;
-            case "Claude":
-                return new ClaudeAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "Ollama":
-                return new OllamaAdapter(config.getBaseUrl(), config.getModel());
-            case "Gemini":
-                return new GeminiAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "Qwen":
-                return new QwenAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "ERNIE Bot":
-                return createERNIEBotAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "Zhipu":
-                return new ZhipuAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "Moonshot":
-                return new MoonshotAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "MiniMax":
-                return createMiniMaxAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "Mistral":
-                return new MistralAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "DeepSeek":
-                return new DeepSeekAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            case "Xiaomimimo":
-                return new XiaomiMimoAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
-            default:
-                // 默认按 OpenAI 兼容协议处理，但保留用户配置的 baseUrl（自定义网关/中转）
-                OpenAIAdapter fallback = new OpenAIAdapter(config.getApiKey(), config.getModel());
-                fallback.updateConfig(config);
-                return fallback;
+        AIAdapter adapter = switch (config.getType()) {
+            case "OpenAI" -> new OpenAIAdapter(config.getApiKey(), config.getModel());
+            case "Claude" -> new ClaudeAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "Ollama" -> new OllamaAdapter(config.getBaseUrl(), config.getModel());
+            case "Gemini" -> new GeminiAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "Qwen" -> new QwenAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "ERNIE Bot" -> createERNIEBotAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "Zhipu" -> new ZhipuAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "Moonshot" -> new MoonshotAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "MiniMax" -> createMiniMaxAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "Mistral" -> new MistralAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "DeepSeek" -> new DeepSeekAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            case "Xiaomimimo" -> new XiaomiMimoAdapter(config.getApiKey(), config.getBaseUrl(), config.getModel());
+            // 默认按 OpenAI 兼容协议处理，但保留用户配置的 baseUrl（自定义网关/中转）
+            default -> new OpenAIAdapter(config.getApiKey(), config.getModel());
+        };
+        // 所有供应商都必须写入运行时配置，设置页的 temperature/top_p/max_tokens 才会生效。
+        if (adapter instanceof ERNIEBotAdapter || adapter instanceof MiniMaxAdapter) {
+            // 这两个适配器在构造时已把 "id:secret" / "key:group" 拆成独立字段，不能再被完整 key 覆盖。
+            ((BaseAIAdapter) adapter).attachRuntimeConfig(config);
+        } else {
+            ((BaseAIAdapter) adapter).updateConfig(config);
         }
+        return adapter;
     }
     
     /**
@@ -187,7 +273,7 @@ public class AIConfigManager {
         for (AIConfig config : configs) {
             if (config.getType().equals(provider)) {
                 currentConfig = config;
-                preferences.put("ai.current.config", config.getName());
+                rememberDefault(config.getName());
                 return;
             }
         }
@@ -196,7 +282,7 @@ public class AIConfigManager {
         for (AIConfig config : configs) {
             if (config.getType().equals(adapterName)) {
                 currentConfig = config;
-                preferences.put("ai.current.config", config.getName());
+                rememberDefault(config.getName());
                 return;
             }
         }
@@ -294,9 +380,7 @@ public class AIConfigManager {
                 loadedConfigs.forEach(this::decryptApiKey);
                 configs.clear();
                 configs.addAll(loadedConfigs);
-                String currentName = preferences.get("ai.current.config", "用户设置");
-                currentConfig = configs.stream().filter(c -> currentName.equals(c.getName())).findFirst()
-                        .orElseGet(() -> configs.stream().filter(c -> "默认OpenAI".equals(c.getName())).findFirst().orElse(null));
+                restoreDefaultConfig();
                 logger.info("成功加载 {} 个AI配置", configs.size());
                 saveConfigs(); // 同时把历史明文密钥迁移为 enc: 格式。
             } else {
@@ -372,6 +456,7 @@ public class AIConfigManager {
                 
         configs.add(new AIConfig("小米Mimo", "Xiaomimimo", "",
                 "https://api.xiaomimimo.com/v1/chat/completions", AppConstants.DEFAULT_XIAOMIMIMO_MODEL));
+        restoreDefaultConfig();
     }
 
     private AIConfig encryptedCopy(AIConfig source) {

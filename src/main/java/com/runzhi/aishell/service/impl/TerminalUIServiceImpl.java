@@ -41,6 +41,9 @@ public class TerminalUIServiceImpl implements TerminalUIService {
     private MonitorPanelController monitorPanelController;
     private FileManagerPanelController fileManagerPanelController;
 
+    /** 统一标签关闭策略：接入终端面板的审批守卫；未设置时直接移除。 */
+    private java.util.function.Function<javafx.scene.control.Tab, Boolean> tabCloser;
+
     /** 记忆每个 Tab 的抽屉展开高度 */
     private static final java.util.prefs.Preferences DRAWER_PREFS =
             java.util.prefs.Preferences.userNodeForPackage(TerminalUIServiceImpl.class);
@@ -90,6 +93,18 @@ public class TerminalUIServiceImpl implements TerminalUIService {
     }
 
     @Override
+    public void setTabCloser(java.util.function.Function<Tab, Boolean> closer) {
+        this.tabCloser = closer;
+    }
+
+    private boolean closeTabThroughStrategy(TabPane pane, Tab tab) {
+        if (tabCloser != null) {
+            return Boolean.TRUE.equals(tabCloser.apply(tab));
+        }
+        return pane.getTabs().remove(tab);
+    }
+
+    @Override
     public void setupKeyboardShortcuts(TabPane terminalTabPane) {
         log.debug("Setting up keyboard shortcuts for TabPane");
         
@@ -105,11 +120,11 @@ public class TerminalUIServiceImpl implements TerminalUIService {
                 log.debug("Ctrl+T pressed - should create new tab");
                 event.consume();
             } else if (event.isControlDown() && event.getCode() == KeyCode.W) {
-                // Ctrl+W 关闭当前标签页
+                // Ctrl+W 关闭当前标签页（走统一关闭策略：有待审批的 Agent 标签会被阻止）
                 Tab selectedTab = terminalTabPane.getSelectionModel().getSelectedItem();
                 if (selectedTab != null) {
-                    terminalTabPane.getTabs().remove(selectedTab);
-                    log.debug("Ctrl+W pressed - closed tab: {}", selectedTab.getText());
+                    closeTabThroughStrategy(terminalTabPane, selectedTab);
+                    log.debug("Ctrl+W pressed - close requested for tab: {}", selectedTab.getText());
                 }
                 event.consume();
             }
@@ -294,16 +309,27 @@ public class TerminalUIServiceImpl implements TerminalUIService {
             fileManagerBox.maxHeightProperty().bind(drawerHeight);
             log.info("Created file manager drawer box for tab: {}", tabId);
 
-            // 抽屉头：点击切换展开/收起
-            javafx.scene.control.Label drawerHeader = new javafx.scene.control.Label("📁 文件 ▲");
+            // 抽屉头：显示可读会话目标与展开状态；点击切换展开/收起
+            javafx.beans.property.ReadOnlyStringWrapper noTarget =
+                    new javafx.beans.property.ReadOnlyStringWrapper(I18n.tr("fm.target.none"));
+            javafx.beans.value.ObservableValue<String> target = fileManagerController == null
+                    ? noTarget.getReadOnlyProperty() : fileManagerController.targetDisplayProperty();
+            javafx.beans.value.ObservableValue<String> targetTip = fileManagerController == null
+                    ? noTarget.getReadOnlyProperty() : fileManagerController.targetTooltipProperty();
+            javafx.scene.control.Label drawerHeader = new javafx.scene.control.Label();
             drawerHeader.getStyleClass().add("file-drawer-header");
             drawerHeader.setMaxWidth(Double.MAX_VALUE);
             drawerHeader.setCursor(javafx.scene.Cursor.HAND);
-            // 用箭头方向反映当前状态
+            // 用箭头方向反映当前状态，目标标题跟随该标签的会话，不使用内部 tab id
             drawerHeader.textProperty().bind(
                 javafx.beans.binding.Bindings.createStringBinding(
-                    () -> fileManagerBox.isManaged() ? "📁 文件 ▼" : "📁 文件 ▲",
-                    fileManagerBox.managedProperty()));
+                    () -> I18n.tr(fileManagerBox.isManaged() ? "fm.drawer.open" : "fm.drawer.closed",
+                            target.getValue()),
+                    fileManagerBox.managedProperty(), target));
+            javafx.scene.control.Tooltip headerTip = new javafx.scene.control.Tooltip();
+            headerTip.textProperty().bind(javafx.beans.binding.Bindings.createStringBinding(
+                    () -> I18n.tr("fm.drawer.tooltip", targetTip.getValue()), targetTip));
+            drawerHeader.setTooltip(headerTip);
             drawerHeader.setOnMouseClicked(e -> {
                 boolean open = !fileManagerBox.isManaged();
                 fileManagerBox.setManaged(open);
@@ -625,9 +651,7 @@ public class TerminalUIServiceImpl implements TerminalUIService {
         javafx.scene.control.ContextMenu contextMenu = new javafx.scene.control.ContextMenu();
 
         javafx.scene.control.MenuItem closeMenuItem = new javafx.scene.control.MenuItem("关闭");
-        closeMenuItem.setOnAction(event -> {
-            tabPane.getTabs().remove(tab);
-        });
+        closeMenuItem.setOnAction(event -> closeTabThroughStrategy(tabPane, tab));
 
         javafx.scene.control.MenuItem closeOthersMenuItem = new javafx.scene.control.MenuItem("关闭其他");
         closeOthersMenuItem.setOnAction(event -> {
@@ -637,12 +661,16 @@ public class TerminalUIServiceImpl implements TerminalUIService {
                     tabsToRemove.add(otherTab);
                 }
             }
-            tabPane.getTabs().removeAll(tabsToRemove);
+            for (javafx.scene.control.Tab otherTab : tabsToRemove) {
+                closeTabThroughStrategy(tabPane, otherTab);
+            }
         });
 
         javafx.scene.control.MenuItem closeAllMenuItem = new javafx.scene.control.MenuItem("关闭全部");
         closeAllMenuItem.setOnAction(event -> {
-            tabPane.getTabs().clear();
+            for (javafx.scene.control.Tab closedTab : new java.util.ArrayList<>(tabPane.getTabs())) {
+                closeTabThroughStrategy(tabPane, closedTab);
+            }
         });
 
         contextMenu.getItems().addAll(closeMenuItem, closeOthersMenuItem, closeAllMenuItem);
@@ -653,20 +681,8 @@ public class TerminalUIServiceImpl implements TerminalUIService {
      * 获取 Tab ID（辅助方法）
      */
     private String getTabId(Tab tab) {
-        if (tab == null) return null;
-        
-        // 尝试从 Tab 的属性中获取 ID
-        if (tab.getId() != null) {
-            return tab.getId();
-        }
-        
-        // 尝试从 Tab 的 userData 中获取 ID
-        if (tab.getUserData() != null) {
-            return String.valueOf(tab.getUserData());
-        }
-        
-        // 如果都没有，使用 Tab 的文本作为 ID
-        return tab.getText() != null ? tab.getText() : String.valueOf(System.identityHashCode(tab));
+        // 身份只能是稳定 id：主机名/文本不应承担身份（v6 阶段 2）
+        return tab == null ? null : tab.getId();
     }
     
     /**

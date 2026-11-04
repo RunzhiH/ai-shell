@@ -80,6 +80,13 @@ public class NavigationManager {
         return loadNewPageInstance(fxmlPath);
     }
     
+    /** Reuse a page already mounted in its destination; another window still needs its own view. */
+    public Parent loadPageForContainer(String fxmlPath, StackPane destination) throws IOException {
+        Parent cached = views.get(fxmlPath);
+        if (cached != null && cached.getParent() == destination) return cached;
+        return loadPage(fxmlPath);
+    }
+
     /**
      * 加载新的页面实例 (不检查缓存)
      */
@@ -104,9 +111,9 @@ public class NavigationManager {
     public void switchToPage(String fxmlPath) {
         Platform.runLater(() -> {
             try {
-                // 页面切换时每次都加载新实例，避免 scene-graph 冲突
-                Parent root = loadPage(fxmlPath, false);
                 Scene currentScene = primaryStage.getScene();
+                if (currentScene != null && currentScene.getRoot() == views.get(fxmlPath)) return;
+                Parent root = loadPage(fxmlPath);
                 if (currentScene != null) {
                     currentScene.setRoot(root);
                 } else {
@@ -139,33 +146,40 @@ public class NavigationManager {
      * @param onLoaded    视图与控制器就绪后的回调
      */
     public void openInNewWindow(String fxmlPath, String title, java.util.function.Consumer<Object> onLoaded) {
+        openInNewWindow(fxmlPath, title, fxmlPath, onLoaded);
+    }
+
+    /**
+     * 按窗口身份复用分离视图，使不同会话使用同一 FXML 时仍有独立的窗口和销毁生命周期。
+     * @param windowKey 当前视图实例的稳定身份；同一身份再次打开只唤起原窗口
+     */
+    public void openInNewWindow(String fxmlPath, String title, String windowKey,
+                                java.util.function.Consumer<Object> onLoaded) {
         Platform.runLater(() -> {
             try {
-                Stage existingStage = auxiliaryStages.get(fxmlPath);
+                Stage existingStage = auxiliaryStages.get(windowKey);
                 if (existingStage != null && existingStage.isShowing()) {
                     if (existingStage.isIconified()) existingStage.setIconified(false);
                     existingStage.toFront();
                     existingStage.requestFocus();
                     try {
-                        onLoaded.accept(controllers.get(fxmlPath));
+                        onLoaded.accept(controllers.get(windowKey));
                     } catch (Exception ex) {
                         log.error("Post-load callback failed for existing {} window: {}",
                                 fxmlPath, ex.getMessage(), ex);
                     }
                     return;
                 }
-                auxiliaryStages.remove(fxmlPath);
+                auxiliaryStages.remove(windowKey);
 
                 // 新窗口需要加载新的视图实例，避免与已有 Scene 共享根节点
                 FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/runzhi/aishell/" + fxmlPath));
-                loader.setResources(I18n.bundle());
-        loader.setResources(I18n.bundle());
                 loader.setResources(I18n.bundle());
                 Parent root = loader.load();
                 Object controller = loader.getController();
 
                 // 只缓存控制器，不缓存视图（因为视图会被多个窗口使用）
-                controllers.put(fxmlPath, controller);
+                controllers.put(windowKey, controller);
 
                 Stage newStage = new Stage();
                 newStage.setTitle(title);
@@ -180,22 +194,12 @@ public class NavigationManager {
                     }
                 }
                 newStage.setScene(scene);
-                auxiliaryStages.put(fxmlPath, newStage);
+                auxiliaryStages.put(windowKey, newStage);
                 newStage.setOnHidden(event -> {
-                    auxiliaryStages.remove(fxmlPath, newStage);
-                    controllers.remove(fxmlPath, controller);
+                    auxiliaryStages.remove(windowKey, newStage);
+                    controllers.remove(windowKey, controller);
+                    cleanController(controller, fxmlPath);
                 });
-                // 窗口关闭时取消控制器持有的后台任务（如正在进行的 AI 流式请求），
-                // 避免请求在后台继续消耗 API 配额、回调继续写入已分离的 UI。
-                if (controller instanceof com.runzhi.aishell.common.util.Cleanable cleanable) {
-                    newStage.setOnCloseRequest(e -> {
-                        try {
-                            cleanable.onWindowClosing();
-                        } catch (Exception ex) {
-                            log.error("Failed to clean up controller on window close: {}", fxmlPath, ex);
-                        }
-                    });
-                }
                 newStage.show();
                 log.debug("Opened page in new window: {}", fxmlPath);
                 try {
@@ -228,7 +232,8 @@ public class NavigationManager {
     public void updateContentPane(String fxmlPath, StackPane contentPane) {
         Platform.runLater(() -> {
             try {
-                Parent root = loadPage(fxmlPath);
+                Parent root = loadPageForContainer(fxmlPath, contentPane);
+                if (contentPane.getChildren().size() == 1 && contentPane.getChildren().getFirst() == root) return;
 
                 // 清空当前内容
                 contentPane.getChildren().clear();
@@ -250,12 +255,25 @@ public class NavigationManager {
     }
 
     /**
-     * 清除缓存
+     * 在 FX 线程清除缓存并释放控制器；普通导航不触发销毁。
      */
     public void clearCache() {
+        // Stage.hide/close both terminate auxiliary controller ownership.
+        for (Stage stage : java.util.List.copyOf(auxiliaryStages.values())) stage.hide();
+        java.util.Set<Object> unique = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        unique.addAll(controllers.values());
+        for (Object controller : unique) cleanController(controller, "cached page");
         views.clear();
         controllers.clear();
         log.debug("Navigation cache cleared");
+    }
+
+    /** One broken cleanup must not prevent other controllers from releasing resources. */
+    private void cleanController(Object controller, String source) {
+        if (controller instanceof com.runzhi.aishell.common.util.Cleanable cleanable) {
+            try { cleanable.onWindowClosing(); }
+            catch (Exception failure) { log.error("Failed to clean controller: {}", source, failure); }
+        }
     }
 
     /**
