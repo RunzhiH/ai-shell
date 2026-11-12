@@ -91,6 +91,15 @@ macOS 和 Linux 理论上能跑，但没有实际验证过。
 MSI 打包需要 WiX 3.11，脚本不自带，去 https://github.com/wixtoolset/wix3/releases
 下载 wix311-binaries.zip 解压到 packaging/wix311 目录。没有 WiX 也能出 exe 和便携包。
 
+打 macOS 客户端包（jpackage 不支持交叉打包，必须在 macOS 上运行）：
+
+    bash packaging/build-package.sh
+
+产物在 target/dist：AIShell.app 可以直接双击运行，AIShell-<version>.dmg
+拖进 Applications 安装。默认不签名，直接分发会被 Gatekeeper 拦；正式发版用
+AISHELL_MAC_SIGN_IDENTITY 环境变量传入 Developer ID 证书，并用 xcrun notarytool
+公证。
+
 ## 配置 AI
 
 AI 功能需要你自己填模型地址、模型名和 API Key，或者连本地的 Ollama。项目方不提供

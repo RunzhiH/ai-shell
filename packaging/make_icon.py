@@ -112,4 +112,9 @@ base.resize((256, 256), Image.LANCZOS).save(r"E:\workspace\ai-shell\packaging\ap
 base.resize((64, 64), Image.LANCZOS).save(r"E:\workspace\ai-shell\packaging\app-icon-64.png")
 base.resize((32, 32), Image.LANCZOS).save(r"E:\workspace\ai-shell\packaging\app-icon-32.png")
 base.resize((16, 16), Image.LANCZOS).save(r"E:\workspace\ai-shell\packaging\app-icon-16.png")
+# icns for macOS 打包 (jpackage --icon 需要 .icns 格式)
+icns_sizes = [16, 32, 64, 128, 256, 512, 1024]
+icns_imgs = [img.resize((s, s), Image.LANCZOS) for s in icns_sizes]
+icns_imgs[0].save(r"E:\workspace\ai-shell\packaging\app-icon.icns", format="ICNS",
+                  sizes=[(s, s) for s in icns_sizes], append_images=icns_imgs[1:])
 print("icon v2 saved")

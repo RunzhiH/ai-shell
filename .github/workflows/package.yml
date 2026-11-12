@@ -1,0 +1,64 @@
+name: Package
+
+# Gitee 是日常开发主仓库；GitHub 的 public 分支按版本同步，所以只在 public
+# 推送或打 tag 时构建。需要时也可以在 Actions 页面手动 Run workflow。
+on:
+  workflow_dispatch:
+  push:
+    branches: [public]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: 准备 WiX 3.11 (MSI 打包需要)
+        shell: pwsh
+        run: |
+          $zip = 'packaging/wix311-binaries.zip'
+          Invoke-WebRequest -Uri 'https://github.com/wixtoolset/wix3/releases/download/wix311rtm/wix311-binaries.zip' -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath 'packaging/wix311' -Force
+          if (-not (Test-Path 'packaging/wix311/candle.exe')) { throw 'WiX 解压失败' }
+      - name: 构建 Windows 包 (app-image / 便携包 / MSI)
+        shell: pwsh
+        run: .\packaging\build-package.ps1
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIShell-windows-x64
+          path: |
+            target/dist/*.msi
+            target/dist/*-portable.zip
+          if-no-files-found: error
+
+  package-macos:
+    # GitHub 现在只提供 Apple Silicon 的 macOS 镜像 (Intel macos-13 已退役)，
+    # 所以这里产出 arm64 包；Intel Mac 需要 macOS 13 或自建 runner 自行构建。
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: 构建 macOS 包 (.app / .dmg, Apple Silicon)
+        shell: bash
+        run: bash packaging/build-package.sh
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIShell-macos-arm64
+          path: target/dist/*.dmg
+          if-no-files-found: error
