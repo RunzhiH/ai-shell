@@ -80,6 +80,7 @@ JP_ARGS=(
     --mac-package-identifier com.runzhi.aishell
     --mac-package-name "${IMAGE_NAME}"
 )
+# 空数组展开写法兼容 bash 3.2 (macOS 和 GitHub Actions 默认 shell) 下 set -u 对空数组的报错
 SIGN_ARGS=()
 if [ -n "${AISHELL_MAC_SIGN_IDENTITY:-}" ]; then
     SIGN_ARGS=(--mac-sign --mac-signing-key-user-name "${AISHELL_MAC_SIGN_IDENTITY}")
@@ -91,7 +92,7 @@ fi
 
 # 5. 生成可双击运行的 .app
 if [ -d "target/dist/${IMAGE_NAME}.app" ]; then rm -rf "target/dist/${IMAGE_NAME}.app"; fi
-"${JDK_HOME}/bin/jpackage" --type app-image "${JP_ARGS[@]}" "${SIGN_ARGS[@]}"
+"${JDK_HOME}/bin/jpackage" --type app-image ${JP_ARGS[@]+"${JP_ARGS[@]}"} ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}
 
 # 6. 生成 dmg (需要 macOS 自带的 hdiutil)
 "${JDK_HOME}/bin/jpackage" --type dmg \
@@ -99,7 +100,7 @@ if [ -d "target/dist/${IMAGE_NAME}.app" ]; then rm -rf "target/dist/${IMAGE_NAME
     --name "${IMAGE_NAME}" --app-version "${APP_VER}" --vendor runzhi \
     --description 'AIShell - AI native SSH workbench' \
     --icon packaging/app-icon.icns \
-    --dest target/dist "${SIGN_ARGS[@]}"
+    --dest target/dist ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}
 
 echo "Done."
 echo "  app: target/dist/${IMAGE_NAME}.app"
