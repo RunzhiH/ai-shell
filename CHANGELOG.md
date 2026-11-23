@@ -2,6 +2,18 @@
 
 版本变更记录，区分**已实现**、**实验性（暂缓）**与**计划中**功能。
 
+## [1.12.0] - 2026-11-23
+
+### 客户端自更新（接续 GitHub #3）
+
+- **下载并安装**：发现新版本且发版里有当前平台的安装包（Windows 取 AIShell-<版本>.msi、macOS 取 .dmg；便携 zip/源码包与 Linux 不自动安装）时，更新对话框提供「下载并安装」：
+  - 后台线程下载（30 分钟超时，Content-Length 可得时显示 KB 进度条），失败给出原因并回退打开发版页面
+  - 下载完成后确认退出：生成 .cmd 更新脚本并以 detached 方式启动，脚本轮询本进程 PID 退出后执行 `msiexec /i <msi> /qb`（UpgradeCode 固定即覆盖升级），成功后启动新版本可执行文件；安装失败自动打开安装包让用户手动完成
+  - 应用可执行文件按「打包后 jar 所在 app 目录的上一层」定位；IDE 直跑或定位失败时不提供自动安装
+  - 「打开发版页面」按钮保留：无安装包或想手动处理时使用
+- **解析层**：`UpdateChecker.parseReleaseJson` 离线可测，UpdateInfo 附带 assets（名称/URL/大小）
+- **测试**：新增 `AppUpdaterTest`（按平台选包、排除便携包、Windows 脚本关键行）与 `UpdateCheckerJsonTest`（含附件的 JSON 解析、缺失字段容错）
+
 ## [1.11.0] - 2026-11-23
 
 ### Agent 面板优化（GitHub #11）

@@ -22,7 +22,7 @@
     <properties>
         <!-- 默认版本号(基础版本): 打包脚本会传 -Drevision 覆盖成 "基础版本.自动构建号"; -->
         <!-- IDE 直接开发时用这个值 -->
-        <revision>1.11.0</revision>
+        <revision>1.12.0</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.12.1</junit.version>
         <javafx.version>21.0.4</javafx.version>

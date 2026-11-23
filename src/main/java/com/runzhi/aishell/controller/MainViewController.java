@@ -18,6 +18,7 @@ import com.runzhi.aishell.common.util.ButtonManager;
 import com.runzhi.aishell.common.util.ClipboardUtils;
 import com.runzhi.aishell.common.util.DialogUtils;
 import com.runzhi.aishell.common.util.SystemInfoProvider;
+import com.runzhi.aishell.common.update.AppUpdater;
 import com.runzhi.aishell.common.update.UpdateChecker;
 import com.runzhi.aishell.common.util.UITools;
 import com.runzhi.aishell.common.validation.InputValidator;
@@ -1443,25 +1444,115 @@ public class MainViewController extends BaseController implements Initializable 
         });
     }
 
-    /** 展示「发现新版本」对话框，提供前往下载页面的入口。 */
+    /** 展示「发现新版本」对话框：当前平台有可安装包时提供下载并安装，否则打开发版页面。 */
     private void showUpdateAvailableDialog(String currentVersion, UpdateChecker.UpdateInfo info) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("发现新版本");
         alert.setHeaderText("AIShell " + info.latestVersion() + " 已发布");
         String notes = info.releaseNotes() == null ? "" : info.releaseNotes();
+        java.util.Optional<UpdateChecker.ReleaseAsset> asset =
+                AppUpdater.installableAsset(info, currentOsTag());
         Label content = new Label("当前版本：" + currentVersion + "\n最新版本：" + info.latestVersion()
+                + (asset.isEmpty() ? "\n（当前平台需手动下载安装）" : "\n安装包：" + asset.get().name())
                 + (notes.isEmpty() ? "" : "\n\n更新内容：\n" + notes));
         content.setWrapText(true);
         DialogPane dialogPane = alert.getDialogPane();
         UITools.setDialogCSS(dialogPane);
         dialogPane.setContent(content);
-        ButtonType download = new ButtonType("前往下载", ButtonBar.ButtonData.OK_DONE);
+        ButtonType install = new ButtonType("下载并安装", ButtonBar.ButtonData.OK_DONE);
+        ButtonType browse = new ButtonType("打开发版页面", ButtonBar.ButtonData.HELP);
         ButtonType later = new ButtonType("以后再说", ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(download, later);
+        alert.getButtonTypes().setAll(asset.isPresent()
+                ? java.util.List.of(install, browse, later) : java.util.List.of(browse, later));
         java.util.Optional<ButtonType> choice = alert.showAndWait();
-        if (choice.orElse(later) == download) {
-            openInBrowser(info.releaseUrl());
+        if (choice.isEmpty() || choice.get() == later) {
+            return;
         }
+        if (choice.get() == browse) {
+            openInBrowser(info.releaseUrl());
+            return;
+        }
+        if (choice.get() == install && asset.isPresent()) {
+            downloadAndInstall(asset.get());
+        }
+    }
+
+    /** 下载安装包：后台线程 + 进度对话框，完成后询问退出并安装。 */
+    private void downloadAndInstall(UpdateChecker.ReleaseAsset asset) {
+        Dialog<Void> progress = new Dialog<>();
+        progress.setTitle("正在更新");
+        progress.setHeaderText("下载 " + asset.name());
+        ProgressBar bar = new ProgressBar(-1);
+        bar.setPrefWidth(360);
+        Label status = new Label("准备下载…");
+        status.setWrapText(true);
+        VBox box = new VBox(8, bar, status);
+        box.setPadding(new Insets(8, 4, 4, 4));
+        progress.getDialogPane().setContent(box);
+        UITools.setDialogCSS(progress.getDialogPane());
+        progress.getDialogPane().getButtonTypes().add(ButtonType.CANCEL);
+        progress.show();
+        com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
+            String name = asset.name();
+            try {
+                java.nio.file.Path downloaded = AppUpdater.download(asset, (downloadedBytes, total) ->
+                        Platform.runLater(() -> {
+                            if (total > 0) {
+                                bar.setProgress(Math.min(1.0, downloadedBytes / (double) total));
+                                status.setText(downloadedBytes / 1024 + " / " + total / 1024 + " KB");
+                            } else {
+                                status.setText(downloadedBytes / 1024 + " KB");
+                            }
+                        }));
+                Platform.runLater(() -> {
+                    progress.close();
+                    confirmInstallAfterExit(downloaded);
+                });
+            } catch (Exception e) {
+                log.warn("下载更新包失败: {}", e.getMessage());
+                Platform.runLater(() -> {
+                    progress.close();
+                    showAlert("下载更新包失败：" + e.getMessage() + "\n可打开发版页面手动下载。");
+                });
+            }
+        });
+    }
+
+    /** 下载完成：确认后退出应用，由独立脚本安装新版本并重启。 */
+    private void confirmInstallAfterExit(java.nio.file.Path downloaded) {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "更新包已下载完成。安装需要退出当前程序，是否立即安装并重启？",
+                ButtonType.OK, ButtonType.CANCEL);
+        confirm.setTitle("安装更新");
+        confirm.setHeaderText("AIShell 即将升级");
+        UITools.setDialogCSS(confirm.getDialogPane());
+        if (confirm.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
+            try {
+                java.nio.file.Files.deleteIfExists(downloaded);
+            } catch (Exception ignored) {
+                // 临时文件清理失败不影响后续使用
+            }
+            return;
+        }
+        boolean started = AppUpdater.installAfterExit(downloaded, currentOsTag());
+        if (started) {
+            Platform.exit();
+            System.exit(0);
+        } else {
+            showAlert("无法自动安装（仅 Windows MSI 支持自动安装），已保留安装包于临时目录，请手动运行。");
+        }
+    }
+
+    /** 当前操作系统的小写标识：windows / macos / linux。 */
+    private static String currentOsTag() {
+        String name = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (name.contains("win")) {
+            return "windows";
+        }
+        if (name.contains("mac")) {
+            return "macos";
+        }
+        return "linux";
     }
 
     /**

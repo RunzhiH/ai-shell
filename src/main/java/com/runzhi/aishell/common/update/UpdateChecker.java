@@ -14,6 +14,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -40,8 +42,13 @@ public final class UpdateChecker {
         // 工具类，禁止实例化
     }
 
+    /** 一个发行附件（安装包），供自更新下载。 */
+    public record ReleaseAsset(String name, String url, long size) {
+    }
+
     /** 一次更新检查的结果。 */
-    public record UpdateInfo(String latestVersion, String releaseUrl, String releaseNotes) {
+    public record UpdateInfo(String latestVersion, String releaseUrl, String releaseNotes,
+                             List<ReleaseAsset> assets) {
     }
 
     /**
@@ -65,7 +72,21 @@ public final class UpdateChecker {
                 log.debug("查询更新返回非 200 状态: {}", response.statusCode());
                 return Optional.empty();
             }
-            JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+            if (response.statusCode() != 200) {
+                log.debug("查询更新返回非 200 状态: {}", response.statusCode());
+                return Optional.empty();
+            }
+            return parseReleaseJson(response.body());
+        } catch (Exception e) {
+            log.debug("更新检查失败（视为无新版本）: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /** 解析 releases/latest 响应；缺 tag_name 或解析失败时返回 Optional.empty()。 */
+    static Optional<UpdateInfo> parseReleaseJson(String body) {
+        try {
+            JsonObject json = JsonParser.parseString(body).getAsJsonObject();
             if (json == null || !json.has("tag_name")) {
                 log.debug("更新响应缺少 tag_name 字段");
                 return Optional.empty();
@@ -75,9 +96,25 @@ public final class UpdateChecker {
                     ? json.get("html_url").getAsString() : FALLBACK_RELEASE_PAGE;
             String notes = json.has("body") && !json.get("body").isJsonNull()
                     ? json.get("body").getAsString() : "";
-            return Optional.of(new UpdateInfo(normalizeVersion(tag), url, trimNotes(notes)));
+            List<ReleaseAsset> assets = new ArrayList<>();
+            if (json.has("assets") && json.get("assets").isJsonArray()) {
+                for (var element : json.getAsJsonArray("assets")) {
+                    JsonObject item = element.getAsJsonObject();
+                    String name = item.has("name") && !item.get("name").isJsonNull()
+                            ? item.get("name").getAsString() : "";
+                    String assetUrl = item.has("browser_download_url")
+                            && !item.get("browser_download_url").isJsonNull()
+                                    ? item.get("browser_download_url").getAsString() : "";
+                    long size = item.has("size") && !item.get("size").isJsonNull()
+                            ? item.get("size").getAsLong() : 0L;
+                    if (!name.isBlank() && !assetUrl.isBlank()) {
+                        assets.add(new ReleaseAsset(name, assetUrl, size));
+                    }
+                }
+            }
+            return Optional.of(new UpdateInfo(normalizeVersion(tag), url, trimNotes(notes), List.copyOf(assets)));
         } catch (Exception e) {
-            log.debug("更新检查失败（视为无新版本）: {}", e.getMessage());
+            log.debug("解析更新响应失败: {}", e.getMessage());
             return Optional.empty();
         }
     }
