@@ -7,9 +7,13 @@ package com.runzhi.aishell.controller;
 
 import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.agent.AgentActivityBus;
+import com.runzhi.aishell.agent.AgentAutoApprovePolicy;
 import com.runzhi.aishell.agent.AgentHistoryStore;
 import com.runzhi.aishell.agent.AgentHistoryWriter;
+import com.runzhi.aishell.agent.AgentOsPreference;
 import com.runzhi.aishell.agent.AgentSessionTracker;
+import com.runzhi.aishell.agent.AgentSkill;
+import com.runzhi.aishell.agent.SkillLibrary;
 import com.runzhi.aishell.ai.AIConfig;
 import com.runzhi.aishell.ai.AIConfigManager;
 import com.runzhi.aishell.service.TerminalCommandService;
@@ -33,6 +37,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.function.Consumer;
@@ -40,7 +45,6 @@ import java.util.prefs.Preferences;
 
 /** Claude-style Agent workspace bound to the active SSH tab. */
 public class AgentWorkspaceController implements com.runzhi.aishell.common.util.Cleanable {
-    private static final String AUTO_LOW_RISK = "agentAutoApproveLowRisk";
     private static final String AGENT_TASK_ID = "agentTaskId";
     private static final String SAVE_HISTORY_PREF = "general.agentHistory";
     private static final String AUTO_APPROVE_PREF_PREFIX = "agent.autoLowRisk.";
@@ -62,13 +66,16 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
                 new AgentConsoleView.Command("/permissions", I18n.tr("agent.cli.permissions")),
                 new AgentConsoleView.Command("/auto", I18n.tr("agent.cli.auto")),
                 new AgentConsoleView.Command("/stop", I18n.tr("agent.cli.stop")),
-                new AgentConsoleView.Command("/clear", I18n.tr("agent.cli.clear")));
+                new AgentConsoleView.Command("/clear", I18n.tr("agent.cli.clear")),
+                new AgentConsoleView.Command("/skills", I18n.tr("agent.cli.skills")),
+                new AgentConsoleView.Command("/skill", I18n.tr("agent.cli.skill")));
     }
 
     /** Help and completion share the same catalog, including the command itself. */
     private String commandHelp() {
         Map<String,String> arguments = Map.of("/new", " [name]", "/resume", " N", "/model", " [N|profile]",
-                "/auto", " on|off", "/rename", " <title>", "/delete", "", "/clear-history", "");
+                "/auto", " on|off", "/rename", " <title>", "/delete", "", "/clear-history", "",
+                "/skills", " [linux|macos|windows|all]", "/skill", " <name>");
         StringBuilder result = new StringBuilder(I18n.tr("agent.cli.commands"));
         for (AgentConsoleView.Command command : commands()) result.append("\r\n  ")
                 .append(String.format("%-20s %s", command.name() + arguments.getOrDefault(command.name(), ""), command.description()));
@@ -122,6 +129,12 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
                 @Override public void deleteTask() { AgentWorkspaceController.this.deleteCurrentTask(activeTab()); }
             });
             console.setArgumentSuggestions(this::argumentSuggestions);
+            // 指令类回复的「粘贴到终端执行」：写入当前会话终端并回车执行（GitHub #11）
+            console.setCommandRunner(command -> {
+                Tab tab = activeTab();
+                if (tab == null || commandService == null) return;
+                commandService.executeCommandInTab(tab, command);
+            });
         }
         showTab(activeTab());
     }
@@ -237,11 +250,53 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
             case "/model" -> { if (argument.isBlank()) status(modelList()); else if (!rejectRunning(I18n.tr("agent.workspace.operationModel"), sessionId)) switchModel(argument); }
             case "/context" -> status(contextSummary(tab));
             case "/permissions" -> status(permissionSummary(tab));
-            case "/auto" -> changeAuto(tab, argument);
+            case "/auto" -> { if (!rejectRunning(I18n.tr("agent.workspace.operationAuto"), sessionId)) changeAuto(tab, argument); }
             case "/stop" -> stopAgent();
             case "/clear" -> clearCurrent();
+            case "/skills" -> status(skillList(argument));
+            case "/skill" -> applySkill(tab, argument);
             default -> error(I18n.tr("agent.workspace.unknownCommand", command));
         }
+    }
+
+    /** /skills [os]：列出该操作系统可用的内置技能；不带参数时按当前选中的目标系统过滤。 */
+    private String skillList(String osArgument) {
+        String os = osArgument.isBlank() ? AgentOsPreference.current()
+                : osArgument.trim().toLowerCase(Locale.ROOT);
+        List<AgentSkill> list = SkillLibrary.forOs(os);
+        if (list.isEmpty()) {
+            return I18n.tr("agent.skill.empty");
+        }
+        StringBuilder builder = new StringBuilder(I18n.tr("agent.skill.listHeader",
+                "all".equals(os) ? I18n.tr("agent.skill.allOs") : os));
+        for (AgentSkill skill : list) {
+            builder.append("\r\n  ").append(String.format("%-16s %s", skill.name(), skill.description()));
+        }
+        builder.append("\r\n").append(I18n.tr("agent.skill.usage"));
+        return builder.toString();
+    }
+
+    /** /skill <name>：新建以技能名为标题的任务，并把技能提示词填入输入框待执行。 */
+    private void applySkill(Tab tab, String name) {
+        if (name.isBlank()) {
+            status(I18n.tr("agent.skill.usage"));
+            return;
+        }
+        Optional<AgentSkill> skill = SkillLibrary.find(name);
+        if (skill.isEmpty()) {
+            error(I18n.tr("agent.skill.notFound", name));
+            return;
+        }
+        if (tab == null) {
+            error(I18n.tr("agent.workspace.noConnectedTab"));
+            return;
+        }
+        if (rejectRunning(I18n.tr("agent.workspace.operationNew"), tab.getId())) return;
+        newTaskForTab(tab, skill.get().name());
+        if (console != null) {
+            console.prepareGoal(skill.get().prompt());
+        }
+        status(I18n.tr("agent.skill.applied", skill.get().name()));
     }
 
     private boolean rejectRunning(String operation, String sessionId) {
@@ -320,6 +375,17 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
     /** 设置页“保存 Agent 历史”开关；关闭后不产生/不更新历史文件。 */
     private boolean historySavingEnabled() {
         return prefs.getBoolean(SAVE_HISTORY_PREF, true);
+    }
+
+    /**
+     * 终端标签关闭时调用：把该连接的最近消息同步落盘。
+     * <p>
+     * 历史只会在任务结束（成功/失败/取消）事件时异步保存，用户中途关闭标签时，
+     * 最后一段对话内容可能尚未写盘，重连后用「历史」打开就只剩旧内容（GitHub #10）。
+     */
+    public void persistHistoryOnTabClosed() {
+        persistHistory();
+        historyWriter.flush();
     }
 
     /** 打开当前连接的会话历史面板：可搜索、恢复、重命名、删除、清空、导出。 */
@@ -676,17 +742,22 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
     /** 设置自动批准：Tab property 作运行期缓存，Preferences 持久化；切换标签/重启后恢复。 */
     private void setAutoApprove(Tab tab, boolean enabled, String source) {
         if (tab == null) return;
-        tab.getProperties().put(AUTO_LOW_RISK, enabled);
+        tab.getProperties().put(AgentAutoApprovePolicy.TAB_PROPERTY, enabled);
         prefs.putBoolean(autoApprovePrefKey(tab), enabled);
+        AgentAutoApprovePolicy.setEnabled(tab.getId(), enabled);
         audit("auto_approve_changed", source, enabled ? "on" : "off");
         refreshConsoleControls(tab);
         status(I18n.tr("agent.workspace.autoChanged", I18n.tr(enabled ? "agent.workspace.on" : "agent.workspace.off")));
     }
 
-    /** 首次显示标签时从 Preferences 恢复自动批准策略；运行期已显式设置的不覆盖。 */
+    /** 首次显示标签时从 Preferences 恢复自动批准策略，并同步给运行期的审批判定。 */
     private void restoreAutoApprove(Tab tab) {
-        if (tab == null || tab.getProperties().containsKey(AUTO_LOW_RISK)) return;
-        tab.getProperties().put(AUTO_LOW_RISK, prefs.getBoolean(autoApprovePrefKey(tab), false));
+        if (tab == null) return;
+        boolean enabled = tab.getProperties().containsKey(AgentAutoApprovePolicy.TAB_PROPERTY)
+                ? Boolean.TRUE.equals(tab.getProperties().get(AgentAutoApprovePolicy.TAB_PROPERTY))
+                : prefs.getBoolean(autoApprovePrefKey(tab), false);
+        tab.getProperties().put(AgentAutoApprovePolicy.TAB_PROPERTY, enabled);
+        AgentAutoApprovePolicy.setEnabled(tab.getId(), enabled);
     }
 
     private String autoApprovePrefKey(Tab tab) {
@@ -698,7 +769,7 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
         if (console == null) return;
         boolean running = tab != null && tab.getId() != null
                 && AgentSessionTracker.getInstance().isRunning(tab.getId());
-        boolean auto = tab != null && Boolean.TRUE.equals(tab.getProperties().get(AUTO_LOW_RISK));
+        boolean auto = tab != null && Boolean.TRUE.equals(tab.getProperties().get(AgentAutoApprovePolicy.TAB_PROPERTY));
         console.setAutoApproveLowRisk(auto, running);
         console.setTaskMenuEnabled(!running,
                 I18n.tr("agent.workspace.operationBlocked", I18n.tr("agent.workspace.operationTask")));
@@ -728,7 +799,7 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
     }
 
     private String permissionSummary(Tab tab) {
-        boolean auto = tab != null && Boolean.TRUE.equals(tab.getProperties().get(AUTO_LOW_RISK));
+        boolean auto = tab != null && Boolean.TRUE.equals(tab.getProperties().get(AgentAutoApprovePolicy.TAB_PROPERTY));
         return I18n.tr("agent.workspace.permissions", I18n.tr(auto ? "agent.workspace.autoApprove" : "agent.workspace.confirmBefore"));
     }
 
@@ -754,7 +825,7 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
     private void toggleAutoApprove() {
         Tab tab = activeTab();
         if (tab == null) { status(I18n.tr("agent.workspace.noConnectedTab")); return; }
-        boolean current = Boolean.TRUE.equals(tab.getProperties().get(AUTO_LOW_RISK));
+        boolean current = Boolean.TRUE.equals(tab.getProperties().get(AgentAutoApprovePolicy.TAB_PROPERTY));
         setAutoApprove(tab, !current, "menu");
     }
 
@@ -801,6 +872,26 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
                 return List.of(
                         new AgentConsoleView.ArgumentSuggestion(I18n.tr("agent.workspace.on"), "/auto on"),
                         new AgentConsoleView.ArgumentSuggestion(I18n.tr("agent.workspace.off"), "/auto off"));
+            }
+            case "/skills" -> {
+                List<AgentConsoleView.ArgumentSuggestion> result = new ArrayList<>();
+                for (String candidate : AgentOsPreference.SUPPORTED) {
+                    String value = "/skills " + candidate;
+                    if (partial.isEmpty() || value.toLowerCase(Locale.ROOT).startsWith(partial)) {
+                        result.add(new AgentConsoleView.ArgumentSuggestion(candidate, value));
+                    }
+                }
+                return result;
+            }
+            case "/skill" -> {
+                List<AgentConsoleView.ArgumentSuggestion> result = new ArrayList<>();
+                for (String candidate : SkillLibrary.names()) {
+                    String value = "/skill " + candidate;
+                    if (partial.isEmpty() || value.toLowerCase(Locale.ROOT).startsWith(partial)) {
+                        result.add(new AgentConsoleView.ArgumentSuggestion(candidate, value));
+                    }
+                }
+                return result;
             }
             default -> { return List.of(); }
         }

@@ -6,6 +6,7 @@
 package com.runzhi.aishell.monitor;
 
 import com.runzhi.aishell.common.config.AppConstants;
+import com.runzhi.aishell.monitor.domain.MonitorSnapshot;
 import com.runzhi.aishell.monitor.domain.SystemMetrics;
 import com.runzhi.aishell.ssh.SSHConnectionManager;
 import lombok.extern.slf4j.Slf4j;
@@ -13,25 +14,36 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
+/**
+ * 系统监控外观：兼容旧 API（{@link MonitorCallback} + {@link SystemMetrics}），
+ * 内部委托给连接级 {@link MonitorSession} 做采样调度。
+ *
+ * <p>历史职责：
+ * <ul>
+ *   <li>遗留同步路径 {@link #getSystemMetrics()}：按固定命令直接采样一轮，
+ *       保留原有解析行为（含 top），供外部一次性调用与回归测试使用；</li>
+ *   <li>调度路径 {@link #startMonitoring()}：使用会话的三档调度（快速/进程/低频），
+ *       同时向新旧回调推送数据。</li>
+ * </ul>
+ */
 @Slf4j
 public class SystemMonitor {
     private DataSourceProvider dataSourceProvider;
-    private volatile boolean monitoring = false;
     /** 关闭/切换监控后不再发起新命令；避免 SSH 已断开时把预期失败记成 ERROR。 */
     private volatile boolean stopping = false;
-    private volatile Thread monitorThread;
-    private MonitorCallback callback; // 添加回调接口
-    /** CPU /proc/stat 上次采样的各字段累计值，用于两次采样间的增量百分比（2026-10-23 审计 P1-16）。 */
+    /** 遗留同步路径的差分基线（调度路径的基线保存在 MonitorSession 的采集器里）。 */
     private long[] prevCpuFields;
-    /** 网络字节上次采样值与采样时刻，用于计算速率（netUp/netDown 字段语义是速度而非累计总量）。 */
     private long prevRxBytes = -1;
     private long prevTxBytes = -1;
     private long prevNetSampleTimeMs = 0;
-    /** 可配置的监控间隔；setMonitorInterval 此前是空方法，公共 API 静默忽略入参（2026-10-23 审计终端-23）。 */
+    private MonitorCallback callback;
+    /** 新视图订阅快照回调；与旧回调并行触发。 */
+    private Consumer<MonitorSnapshot> snapshotCallback;
+    /** 可配置的监控间隔；setMonitorInterval 此前是空方法，公共 API 静默忽略入参。 */
     private volatile long monitorIntervalMs = AppConstants.MONITOR_INTERVAL_MS;
+    private volatile MonitorSession session;
 
     // 保留原有的构造函数以向后兼容
     public SystemMonitor(SSHConnectionManager connectionManager) {
@@ -44,57 +56,107 @@ public class SystemMonitor {
     }
 
     public synchronized void startMonitoring() {
-        if (monitorThread != null && monitorThread.isAlive()) return;
+        if (session != null && !session.isPausedOrStopped()) {
+            return;
+        }
+        if (session != null) {
+            session.stop();
+        }
         stopping = false;
-        monitoring = true;
-        monitorThread = new Thread(this::monitorLoop, "ssh-system-monitor");
-        monitorThread.setDaemon(true);
-        monitorThread.start();
+        session = new MonitorSession(dataSourceProvider, monitorIntervalMs);
+        session.addListener(this::onSnapshot);
+        session.start();
     }
 
-    private void monitorLoop() {
-        while (monitoring && dataSourceProvider.isConnected()) {
-            try {
-                // 获取系统指标
-                SystemMetrics metrics = getSystemMetrics();
-                // 采样期间被要求停止时丢弃这批数据，避免关闭后仍回调 UI
-                if (!monitoring) break;
-
-                // 通过回调更新UI，使用 SystemMetrics 对象
-                if (callback != null && metrics != null) {
-                    callback.onMetricsUpdate(metrics);
-                }
-
-                Thread.sleep(monitorIntervalMs); // 使用配置的监控间隔
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                log.error("Error during monitoring", e);
-                // 不再直接break，而是继续尝试监控
-                try {
-                    Thread.sleep(monitorIntervalMs); // 等待后再继续
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break; // 如果被中断，则退出
-                }
-            }
+    private void onSnapshot(MonitorSnapshot snapshot) {
+        if (stopping) return;
+        if (callback != null && snapshot.getSystemMetrics() != null) {
+            callback.onMetricsUpdate(snapshot.getSystemMetrics());
+        }
+        if (snapshotCallback != null) {
+            snapshotCallback.accept(snapshot);
         }
     }
 
+    public synchronized void stopMonitoring() {
+        stopping = true;
+        if (session != null) {
+            session.stop();
+            session = null;
+        }
+    }
+
+    /** 暂停采样与实时更新；恢复后重建差分基线，避免暂停区间形成速率突刺。 */
+    public synchronized void pauseMonitoring() {
+        if (session != null) session.pause();
+    }
+
+    public synchronized void resumeMonitoring() {
+        if (session != null) {
+            session.resume();
+        } else if (dataSourceProvider != null && dataSourceProvider.isConnected()) {
+            // 暂停后连接被替换的情况：重新建立会话
+            startMonitoring();
+        }
+    }
+
+    public synchronized boolean isMonitoringPaused() {
+        return session != null && session.isPausedOrStopped();
+    }
+
+    /** 立即刷新：复用调度入口，不创建重叠采样任务。 */
+    public void refreshNow() {
+        if (session != null) session.triggerNow();
+    }
+
     /**
-     * 获取系统指标并解析为 SystemMetrics 对象
+     * 设置监控间隔：立即作用于正在运行的会话（重排快速通道调度）。
+     * 速率计算始终使用实际采样时间差，间隔只控制调度。
+     */
+    public synchronized void setMonitorInterval(long intervalMs) {
+        if (intervalMs < 500) {
+            log.warn("Monitor interval {}ms is too small, clamped to {}", intervalMs, 500);
+            intervalMs = 500;
+        }
+        this.monitorIntervalMs = intervalMs;
+        if (session != null) {
+            session.setIntervalMs(intervalMs);
+        }
+    }
+
+    public long getMonitorInterval() {
+        return monitorIntervalMs;
+    }
+
+    /** 进入进程页后启用进程列表采样；离开时关闭以节省开销。 */
+    public void setProcessSamplingEnabled(boolean enabled) {
+        if (session != null) session.setProcessSamplingEnabled(enabled);
+    }
+
+    public void setSnapshotCallback(Consumer<MonitorSnapshot> snapshotCallback) {
+        this.snapshotCallback = snapshotCallback;
+    }
+
+    /**
+     * 获取当前会话标识，界面据此丢弃切换主机后旧会话返回的数据。
+     */
+    public String getCurrentSessionId() {
+        return session != null ? session.getSessionId() : null;
+    }
+
+    /**
+     * 获取系统指标并解析为 SystemMetrics 对象（遗留同步路径）。
+     *
+     * <p>该路径保留原有的固定命令与解析行为（含 top 解析），供外部一次性调用与回归测试使用；
+     * 生产界面数据走 {@link MonitorSession} 的三档调度。
      *
      * @return SystemMetrics 对象
      */
     public SystemMetrics getSystemMetrics() {
         if (stopping) return null;
         try {
-            // 尝试使用更简单的命令来获取系统指标，避免top命令可能的超时问题
             SystemMetrics metrics = SystemMetrics.builder().build();
 
-            // 并行执行多个命令以提高效率
-            // 先获取磁盘使用率
             String dfOutput = executeCommandWithTimeout("df -h", AppConstants.DF_COMMAND_TIMEOUT);
             if (dfOutput != null && !dfOutput.isEmpty()) {
                 double diskUsage = parseDiskUsage(dfOutput);
@@ -102,33 +164,26 @@ public class SystemMonitor {
                 metrics.setDiskUsageString(String.format("%.1f%%", diskUsage));
             }
 
-            // 尝试获取基本系统信息
             String uptimeOutput = executeCommandWithTimeout("uptime", AppConstants.UPTIME_COMMAND_TIMEOUT);
             if (uptimeOutput != null && !uptimeOutput.isEmpty()) {
                 parseUptimeOutput(uptimeOutput, metrics);
             }
 
-            // 获取内存信息，使用更轻量级的命令
             String memOutput = executeCommandWithTimeout("free -k", AppConstants.FREE_COMMAND_TIMEOUT);
             if (memOutput != null && !memOutput.isEmpty()) {
                 parseFreeOutput(memOutput, metrics);
             }
 
-            // 获取CPU信息
             String cpuStatOutput = executeCommandWithTimeout("cat /proc/stat | head -n 1", AppConstants.CPUSTAT_COMMAND_TIMEOUT);
             if (cpuStatOutput != null && !cpuStatOutput.isEmpty()) {
                 parseCpuStatOutput(cpuStatOutput, metrics);
             }
 
-            // 获取网络信息
-            // 直接读取 /proc/net/dev：远端 grep 的接口名白名单（eth|wlan|enp|wlp）会漏掉
-            // ens33/eno1/enx 等主流命名，此类机器网络指标恒为 0（2026-10-23 审计 P1-16）
             String netOutput = executeCommandWithTimeout("cat /proc/net/dev", AppConstants.NET_COMMAND_TIMEOUT);
             if (netOutput != null && !netOutput.isEmpty()) {
                 parseNetworkOutput(netOutput, metrics);
             }
 
-            // 获取进程信息
             String psOutput = executeCommandWithTimeout("ps aux --no-headers | wc -l", AppConstants.PROCESS_COMMAND_TIMEOUT);
             if (psOutput != null && !psOutput.isEmpty()) {
                 try {
@@ -139,14 +194,12 @@ public class SystemMonitor {
                 }
             }
 
-            // 获取磁盘I/O信息（如果可用）
-            String diskIoOutput = executeCommandWithTimeout("cat /proc/diskstats 2>/dev/null | head -n 5", AppConstants.PROCESS_COMMAND_TIMEOUT);
+            // 磁盘 I/O：完整采集设备统计（此前 head -n 5 会漏掉其余设备）
+            String diskIoOutput = executeCommandWithTimeout("cat /proc/diskstats 2>/dev/null", AppConstants.PROCESS_COMMAND_TIMEOUT);
             if (diskIoOutput != null && !diskIoOutput.isEmpty()) {
                 parseDiskIoOutput(diskIoOutput, metrics);
             }
 
-            // 如果需要更详细的信息，可以尝试top命令，但使用更长的超时
-            // 现在将其放在最后以避免阻塞
             try {
                 String topOutput = executeCommandWithTimeout(
                         "export LANG=\"en_US\"; export LANGUAGE=\"en_US\"; export LC_ALL=\"en_US\"; timeout 15 top -b -n 1",
@@ -154,7 +207,6 @@ public class SystemMonitor {
                 );
                 SystemMetrics topMetrics = parseTopOutput(topOutput);
                 if (topMetrics != null) {
-                    // 合并top解析的结果
                     mergeMetrics(metrics, topMetrics);
                 }
             } catch (Exception e) {
@@ -176,7 +228,7 @@ public class SystemMonitor {
             return;
         }
 
-        String[] lines = diskIoOutput.split("\n");
+        String[] lines = diskIoOutput.split("\\R");
         long totalRead = 0;
         long totalWrite = 0;
 
@@ -184,18 +236,15 @@ public class SystemMonitor {
             line = line.trim();
             if (line.isEmpty()) continue;
 
-            // 解析磁盘I/O统计信息
             String[] fields = line.trim().split("\\s+");
             if (fields.length >= 14) {
                 try {
-                    // 字段6是读取的扇区数，字段10是写入的扇区数
-                    long sectorsRead = Long.parseLong(fields[5]); // 读取扇区数
-                    long sectorsWritten = Long.parseLong(fields[9]); // 写入扇区数
-                    
+                    long sectorsRead = Long.parseLong(fields[5]);
+                    long sectorsWritten = Long.parseLong(fields[9]);
+
                     totalRead += sectorsRead;
                     totalWrite += sectorsWritten;
                 } catch (NumberFormatException e) {
-                    // 忽略解析错误
                     log.debug("Could not parse disk I/O data: {}", line);
                 }
             }
@@ -208,9 +257,6 @@ public class SystemMonitor {
 
     /**
      * 解析 top 命令输出并生成 SystemMetrics 对象
-     *
-     * @param topOutput top 命令的输出
-     * @return SystemMetrics 对象
      */
     private SystemMetrics parseTopOutput(String topOutput) {
         if (topOutput == null || topOutput.isEmpty()) {
@@ -218,30 +264,20 @@ public class SystemMonitor {
         }
 
         SystemMetrics metrics = SystemMetrics.builder().build();
-        String[] lines = topOutput.split("\n");
+        String[] lines = topOutput.split("\\R");
 
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].trim();
+        for (String line : lines) {
+            line = line.trim();
 
-            // 解析时间戳和运行时间
             if (line.startsWith("top - ")) {
-                // 例如: top - 09:45:21 up 52 days, 19:03, 4 users, load average: 0.15, 0.15, 0.13
                 parseTimestampAndUptime(line, metrics);
-            }
-            // 解析任务信息
-            else if (line.startsWith("Tasks:")) {
+            } else if (line.startsWith("Tasks:")) {
                 parseTasks(line, metrics);
-            }
-            // 解析CPU信息
-            else if (line.startsWith("%Cpu(s):")) {
+            } else if (line.startsWith("%Cpu(s):")) {
                 parseCpu(line, metrics);
-            }
-            // 解析内存信息
-            else if (line.contains("KiB Mem")) {
+            } else if (line.contains("KiB Mem")) {
                 parseMemory(line, metrics);
-            }
-            // 解析交换空间信息
-            else if (line.contains("KiB Swap")) {
+            } else if (line.contains("KiB Swap")) {
                 parseSwap(line, metrics);
             }
         }
@@ -250,23 +286,21 @@ public class SystemMonitor {
     }
 
     private void parseTimestampAndUptime(String line, SystemMetrics metrics) {
-        // 正则表达式解析时间戳和运行时间
-        Pattern pattern = Pattern.compile("top - (\\d{2}:\\d{2}:\\d{2}) up ([^,]+),\\s*(\\d+) users?,\\s*load average:\\s*([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)");
-        Matcher matcher = pattern.matcher(line);
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("top - (\\d{2}:\\d{2}:\\d{2}) up ([^,]+),\\s*(\\d+) users?,\\s*load average:\\s*([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)");
+        java.util.regex.Matcher matcher = pattern.matcher(line);
         if (matcher.find()) {
-            metrics.setTimestamp(matcher.group(1)); // 时间戳
-            metrics.setUptime(matcher.group(2));    // 运行时间
-            metrics.setUserCount(Integer.parseInt(matcher.group(3))); // 用户数
-            metrics.setLoadAverage1(Double.parseDouble(matcher.group(4))); // 1分钟平均负载
-            metrics.setLoadAverage5(Double.parseDouble(matcher.group(5))); // 5分钟平均负载
-            metrics.setLoadAverage15(Double.parseDouble(matcher.group(6))); // 15分钟平均负载
+            metrics.setTimestamp(matcher.group(1));
+            metrics.setUptime(matcher.group(2));
+            metrics.setUserCount(Integer.parseInt(matcher.group(3)));
+            metrics.setLoadAverage1(Double.parseDouble(matcher.group(4)));
+            metrics.setLoadAverage5(Double.parseDouble(matcher.group(5)));
+            metrics.setLoadAverage15(Double.parseDouble(matcher.group(6)));
         }
     }
 
     private void parseTasks(String line, SystemMetrics metrics) {
-        // 例如: Tasks: 122 total, 1 running, 121 sleeping, 0 stopped, 0 zombie
-        Pattern pattern = Pattern.compile("Tasks:\\s*(\\d+) total,\\s*(\\d+) running,\\s*(\\d+) sleeping,\\s*(\\d+) stopped,\\s*(\\d+) zombie");
-        Matcher matcher = pattern.matcher(line);
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("Tasks:\\s*(\\d+) total,\\s*(\\d+) running,\\s*(\\d+) sleeping,\\s*(\\d+) stopped,\\s*(\\d+) zombie");
+        java.util.regex.Matcher matcher = pattern.matcher(line);
         if (matcher.find()) {
             metrics.setTotalTasks(Integer.parseInt(matcher.group(1)));
             metrics.setRunningTasks(Integer.parseInt(matcher.group(2)));
@@ -277,49 +311,43 @@ public class SystemMonitor {
     }
 
     private void parseCpu(String line, SystemMetrics metrics) {
-        // 例如: %Cpu(s): 1.6 us, 1.6 sy, 0.0 ni, 96.8 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st
-        Pattern pattern = Pattern.compile("%Cpu\\(s\\):\\s*([\\d.]+) us,\\s*([\\d.]+) sy,\\s*([\\d.]+) ni,\\s*([\\d.]+) id,\\s*([\\d.]+) wa,\\s*([\\d.]+) hi,\\s*([\\d.]+) si,\\s*([\\d.]+) st");
-        Matcher matcher = pattern.matcher(line);
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("%Cpu\\(s\\):\\s*([\\d.]+) us,\\s*([\\d.]+) sy,\\s*([\\d.]+) ni,\\s*([\\d.]+) id,\\s*([\\d.]+) wa,\\s*([\\d.]+) hi,\\s*([\\d.]+) si,\\s*([\\d.]+) st");
+        java.util.regex.Matcher matcher = pattern.matcher(line);
         if (matcher.find()) {
-            metrics.setCpuUser(Double.parseDouble(matcher.group(1))); // 用户CPU使用率
-            metrics.setCpuSystem(Double.parseDouble(matcher.group(2))); // 系统CPU使用率
-            metrics.setCpuNice(Double.parseDouble(matcher.group(3))); // nice进程CPU使用率
-            metrics.setCpuIdle(Double.parseDouble(matcher.group(4))); // 空闲CPU使用率
-            metrics.setCpuWait(Double.parseDouble(matcher.group(5))); // 等待IO的CPU使用率
-            metrics.setCpuHardwareInterrupt(Double.parseDouble(matcher.group(6))); // 硬件中断CPU使用率
-            metrics.setCpuSoftwareInterrupt(Double.parseDouble(matcher.group(7))); // 软件中断CPU使用率
-            metrics.setCpuSteal(Double.parseDouble(matcher.group(8))); // 虚拟化窃取CPU使用率
+            metrics.setCpuUser(Double.parseDouble(matcher.group(1)));
+            metrics.setCpuSystem(Double.parseDouble(matcher.group(2)));
+            metrics.setCpuNice(Double.parseDouble(matcher.group(3)));
+            metrics.setCpuIdle(Double.parseDouble(matcher.group(4)));
+            metrics.setCpuWait(Double.parseDouble(matcher.group(5)));
+            metrics.setCpuHardwareInterrupt(Double.parseDouble(matcher.group(6)));
+            metrics.setCpuSoftwareInterrupt(Double.parseDouble(matcher.group(7)));
+            metrics.setCpuSteal(Double.parseDouble(matcher.group(8)));
         }
     }
 
     private void parseMemory(String line, SystemMetrics metrics) {
-        // 例如: KiB Mem : 3782380 total, 797540 free, 324120 used, 2660720 buff/cache
-        Pattern pattern = Pattern.compile("KiB Mem\\s*:\\s*(\\d+) total,\\s*(\\d+) free,\\s*(\\d+) used,\\s*(\\d+) buff/cache");
-        Matcher matcher = pattern.matcher(line.replaceAll("\\s+", " ")); // 标准化空格
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("KiB Mem\\s*:\\s*(\\d+) total,\\s*(\\d+) free,\\s*(\\d+) used,\\s*(\\d+) buff/cache");
+        java.util.regex.Matcher matcher = pattern.matcher(line.replaceAll("\\s+", " "));
         if (matcher.find()) {
-            metrics.setTotalMemory(Long.parseLong(matcher.group(1))); // 总内存
-            metrics.setFreeMemory(Long.parseLong(matcher.group(2))); // 空闲内存
-            metrics.setUsedMemory(Long.parseLong(matcher.group(3))); // 已用内存
-            metrics.setBufferCacheMemory(Long.parseLong(matcher.group(4))); // 缓冲/缓存内存
+            metrics.setTotalMemory(Long.parseLong(matcher.group(1)));
+            metrics.setFreeMemory(Long.parseLong(matcher.group(2)));
+            metrics.setUsedMemory(Long.parseLong(matcher.group(3)));
+            metrics.setBufferCacheMemory(Long.parseLong(matcher.group(4)));
         }
 
-        // 查找可用内存（通常在下一行或同一行的可用列）
-        // 如果没有单独的可用内存信息，则使用free + buff/cache作为可用内存
         if (metrics.getAvailableMemory() == 0 && metrics.getFreeMemory() > 0 && metrics.getBufferCacheMemory() > 0) {
             metrics.setAvailableMemory(metrics.getFreeMemory() + metrics.getBufferCacheMemory());
         }
     }
 
     private void parseSwap(String line, SystemMetrics metrics) {
-        // 例如: KiB Swap: 0 total, 0 free, 0 used. 3160192 avail Mem
-        Pattern pattern = Pattern.compile("KiB Swap\\s*:\\s*(\\d+) total,\\s*(\\d+) free,\\s*(\\d+) used\\.?\\s*(?:([\\d]+) avail Mem)?");
-        Matcher matcher = pattern.matcher(line.replaceAll("\\s+", " ")); // 标准化空格
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("KiB Swap\\s*:\\s*(\\d+) total,\\s*(\\d+) free,\\s*(\\d+) used\\.?\\s*(?:([\\d]+) avail Mem)?");
+        java.util.regex.Matcher matcher = pattern.matcher(line.replaceAll("\\s+", " "));
         if (matcher.find()) {
-            metrics.setTotalSwap(Long.parseLong(matcher.group(1))); // 总交换空间
-            metrics.setFreeSwap(Long.parseLong(matcher.group(2))); // 空闲交换空间
-            metrics.setUsedSwap(Long.parseLong(matcher.group(3))); // 已用交换空间
+            metrics.setTotalSwap(Long.parseLong(matcher.group(1)));
+            metrics.setFreeSwap(Long.parseLong(matcher.group(2)));
+            metrics.setUsedSwap(Long.parseLong(matcher.group(3)));
 
-            // 如果有可用内存信息，则更新
             if (matcher.group(4) != null) {
                 metrics.setAvailableMemory(Long.parseLong(matcher.group(4)));
             }
@@ -328,22 +356,17 @@ public class SystemMonitor {
 
     /**
      * 解析磁盘使用率
-     *
-     * @param dfOutput df命令的输出
-     * @return 磁盘使用率百分比
      */
     private double parseDiskUsage(String dfOutput) {
         if (dfOutput == null || dfOutput.isEmpty()) {
             return 0.0;
         }
 
-        String[] lines = dfOutput.split("\n");
-        double maxUsage = 0.0; // 使用最大使用率，而不是只看根目录
+        String[] lines = dfOutput.split("\\R");
+        double maxUsage = 0.0;
 
         for (String line : lines) {
-            // 匹配磁盘使用情况，例如：/dev/sda1       20G   10G  9.0G  50% /
             if (line.trim().matches("^/dev/.*")) {
-                // 使用正则表达式提取使用百分比
                 java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\b(\\d+)%");
                 java.util.regex.Matcher matcher = pattern.matcher(line);
                 if (matcher.find()) {
@@ -374,23 +397,11 @@ public class SystemMonitor {
         }
     }
 
-    private String executeCommand(String command) {
-        // 实现命令执行逻辑
-        if (stopping) return "";
-        try {
-            return dataSourceProvider.executeCommand(command);
-        } catch (Exception e) {
-            logCommandFailure(command, e);
-            return "";
-        }
-    }
-
     /**
      * 执行命令并设置超时时间
      */
     private String executeCommandWithTimeout(String command, int timeoutMs) {
         if (stopping) return "";
-        // 创建一个Future任务来执行命令并在超时后取消
         CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
             try {
                 return dataSourceProvider.executeCommand(command);
@@ -422,26 +433,21 @@ public class SystemMonitor {
      * 解析uptime命令输出
      */
     private void parseUptimeOutput(String uptimeOutput, SystemMetrics metrics) {
-        // 示例:  10:42:50 up 52 days, 20:01,  4 users,  load average: 0.15, 0.15, 0.13
         if (uptimeOutput != null) {
             String[] parts = uptimeOutput.trim().split(",\\s*load average:");
             if (parts.length >= 2) {
-                // 解析系统时间和运行时间
                 String timeAndUptime = parts[0];
                 String[] timeParts = timeAndUptime.split("up");
                 if (timeParts.length >= 2) {
-                    // 提取时间戳和运行时间
                     String timePart = timeParts[0].trim();
                     String uptimePart = timeParts[1].trim();
 
-                    // 提取时间戳（从右侧提取时间）
                     String[] timeFields = timePart.split("\\s+");
                     if (timeFields.length > 0) {
                         metrics.setTimestamp(timeFields[timeFields.length - 1]);
                     }
-                    metrics.setUptime(uptimePart.replaceFirst("\\s*,.*$", "")); // 移除用户数部分
+                    metrics.setUptime(uptimePart.replaceFirst("\\s*,.*$", ""));
 
-                    // 提取用户数
                     if (timeAndUptime.contains("users")) {
                         String[] userPart = timeAndUptime.split(",\\s*\\d+\\s+users");
                         String userStr = timeAndUptime.substring(userPart[0].length()).trim();
@@ -457,7 +463,6 @@ public class SystemMonitor {
                     }
                 }
 
-                // 解析负载平均值
                 String loadavgPart = parts[1].trim();
                 String[] loadavgValues = loadavgPart.split(",\\s*");
                 if (loadavgValues.length >= 3) {
@@ -477,7 +482,7 @@ public class SystemMonitor {
      * 解析free命令输出
      */
     private void parseFreeOutput(String freeOutput, SystemMetrics metrics) {
-        String[] lines = freeOutput.split("\n");
+        String[] lines = freeOutput.split("\\R");
 
         for (String line : lines) {
             line = line.trim();
@@ -488,8 +493,8 @@ public class SystemMonitor {
                         metrics.setTotalMemory(Long.parseLong(parts[1]));
                         metrics.setUsedMemory(Long.parseLong(parts[2]));
                         metrics.setFreeMemory(Long.parseLong(parts[3]));
-                        metrics.setBufferCacheMemory(Long.parseLong(parts[5])); // buff/cache
-                        metrics.setAvailableMemory(Long.parseLong(parts[6])); // available
+                        metrics.setBufferCacheMemory(Long.parseLong(parts[5]));
+                        metrics.setAvailableMemory(Long.parseLong(parts[6]));
                     } catch (NumberFormatException e) {
                         // 忽略解析错误
                     }
@@ -515,7 +520,7 @@ public class SystemMonitor {
     private void parseCpuStatOutput(String cpuStatOutput, SystemMetrics metrics) {
         if (cpuStatOutput != null && !cpuStatOutput.isEmpty()) {
             String[] parts = cpuStatOutput.trim().split("\\s+");
-            if (parts.length >= 8) { // cpu user nice system idle iowait irq softirq [steal [guest ...]]
+            if (parts.length >= 8) {
                 try {
                     long user = Long.parseLong(parts[1]);
                     long nice = Long.parseLong(parts[2]);
@@ -524,18 +529,15 @@ public class SystemMonitor {
                     long iowait = Long.parseLong(parts[5]);
                     long irq = Long.parseLong(parts[6]);
                     long softirq = Long.parseLong(parts[7]);
-                    // steal 字段在较新内核才有，旧内核可能缺失，此时按 0 处理
                     long steal = parts.length >= 9 ? Long.parseLong(parts[8]) : 0L;
 
                     long[] current = {user, nice, system, idle, iowait, irq, softirq, steal};
                     long[] prev = prevCpuFields;
                     prevCpuFields = current;
                     if (prev == null) {
-                        // 首次采样只有累计计数：无法算速率，记录基线后交给后续采样（2026-10-23 审计 P1-16）
                         return;
                     }
 
-                    // 两次采样间的增量百分比：直接用累计计数算出来的是"开机以来平均值"，几乎恒定
                     long dUser = user - prev[0], dNice = nice - prev[1], dSystem = system - prev[2];
                     long dIdle = idle - prev[3], dWait = iowait - prev[4];
                     long dIrq = irq - prev[5], dSoft = softirq - prev[6], dSteal = steal - prev[7];
@@ -564,7 +566,7 @@ public class SystemMonitor {
             return;
         }
 
-        String[] lines = netOutput.split("\n");
+        String[] lines = netOutput.split("\\R");
         long totalRxBytes = 0;
         long totalTxBytes = 0;
 
@@ -572,29 +574,22 @@ public class SystemMonitor {
             String line = rawLine.trim();
             if (line.isEmpty()) continue;
 
-            // /proc/net/dev 的接口行固定是 "name: rx_* tx_*"，两行表头（"Inter-|..." 与
-            // " face |bytes ..."）都不含冒号，因此按冒号定位接口行。
-            // 旧实现用 "|face" 判定表头，与实际的 " face |bytes" 对不上，导致表头被当成
-            // 接口行解析：parts[1] 取到 "|bytes"，每次采样都抛 NumberFormatException
-            // 并打出一条 debug 日志。
             int colon = line.indexOf(':');
             if (colon <= 0) continue;
 
             String ifname = line.substring(0, colon).trim();
-            // 接口名不含空白与 '|'：既排除残留的表头，也避免把任意 "xxx yyy: ..." 当接口
             if (ifname.isEmpty() || ifname.indexOf('|') >= 0
                     || ifname.chars().anyMatch(Character::isWhitespace)) {
                 continue;
             }
             if ("lo".equals(ifname)) continue;
 
-            // 冒号后是 rx 的 8 列紧跟 tx 的 8 列；列数不足说明输出被截断，跳过而不是误读错位的列
             String[] parts = line.substring(colon + 1).trim().split("\\s+");
             if (parts.length < 16) continue;
 
             try {
-                long rxBytes = Long.parseLong(parts[0]);  // rx bytes
-                long txBytes = Long.parseLong(parts[8]);  // tx bytes
+                long rxBytes = Long.parseLong(parts[0]);
+                long txBytes = Long.parseLong(parts[8]);
 
                 totalRxBytes += rxBytes;
                 totalTxBytes += txBytes;
@@ -603,8 +598,7 @@ public class SystemMonitor {
             }
         }
 
-        // 累计总量与速率分开：netUp/netDown 的字段语义是"速度"，
-        // 直接塞累计字节会把开机至今总流量显示成速率（2026-10-23 审计 P1-16）
+        // 累计总量与速率分开：netUp/netDown 的字段语义是"速度"
         metrics.setTotalRxBytes(totalRxBytes);
         metrics.setTotalTxBytes(totalTxBytes);
         long now = System.currentTimeMillis();
@@ -612,22 +606,12 @@ public class SystemMonitor {
             double seconds = Math.max(0.001, (now - prevNetSampleTimeMs) / 1000.0);
             long rxDelta = Math.max(0, totalRxBytes - prevRxBytes);
             long txDelta = Math.max(0, totalTxBytes - prevTxBytes);
-            metrics.setNetUp(formatNetworkSpeed((long) (txDelta / seconds)));
-            metrics.setNetDown(formatNetworkSpeed((long) (rxDelta / seconds)));
+            metrics.setNetUp(MonitorFormats.legacyNetworkSpeed((long) (txDelta / seconds)));
+            metrics.setNetDown(MonitorFormats.legacyNetworkSpeed((long) (rxDelta / seconds)));
         }
         prevRxBytes = totalRxBytes;
         prevTxBytes = totalTxBytes;
         prevNetSampleTimeMs = now;
-    }
-
-    /**
-     * 格式化网络速度
-     */
-    private String formatNetworkSpeed(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
-        if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-        return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 
     /**
@@ -672,17 +656,8 @@ public class SystemMonitor {
         if (additional.getTotalTxBytes() > 0) base.setTotalTxBytes(additional.getTotalTxBytes());
     }
 
-    public synchronized void stopMonitoring() {
-        stopping = true;
-        monitoring = false;
-        Thread thread = monitorThread;
-        monitorThread = null;
-        if (thread != null) thread.interrupt();
-    }
-
     // 添加回调接口
     public interface MonitorCallback {
-        // 使用 SystemMetrics 对象进行回调
         void onMetricsUpdate(SystemMetrics metrics);
     }
 
@@ -716,19 +691,11 @@ public class SystemMonitor {
      */
     public Map<String, Object> getServiceStatus() {
         Map<String, Object> status = new java.util.HashMap<>();
-        status.put("isMonitoring", monitoring);
-        status.put("isConnected", dataSourceProvider.isConnected());
+        status.put("isMonitoring", session != null);
+        status.put("isConnected", isDataSourceConnected());
         status.put("hasCallback", callback != null);
+        status.put("intervalMs", monitorIntervalMs);
         return status;
-    }
-
-    /**
-     * 设置监控间隔
-     */
-    public void setMonitorInterval(long intervalMs) {
-        // 由于AppConstants是静态的，我们不能直接修改它
-        // 这里可以考虑使用局部变量或者系统属性来覆盖
-        // 暂时保留原实现，可通过重启监控来应用新设置
     }
 
     /**

@@ -49,4 +49,6 @@ module com.runzhi.aishell {
     // PropertyValueFactory 通过反射读取控制器内嵌类的属性，需要 javafx.base 访问权限
     opens com.runzhi.aishell.controller to javafx.fxml, javafx.base, org.fxmisc.richtext;
     opens com.runzhi.aishell.ui to javafx.fxml;
+    // FXMLLoader 反射注入编辑器窗口控制器
+    opens com.runzhi.aishell.editor to javafx.fxml;
 }

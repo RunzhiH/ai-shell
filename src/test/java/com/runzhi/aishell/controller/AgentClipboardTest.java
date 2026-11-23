@@ -49,7 +49,20 @@ class AgentClipboardTest {
             assertTrue(bounds.getMaxX() <= copy.getScene().getWidth() + 1, "copy outside scene: " + bounds);
         });
         fx(() -> copyRef.get().fire());
-        fx(() -> assertEquals("复制内容", Clipboard.getSystemClipboard().getString()));
+        // 与产品一致：FX 剪贴板不可用时 copyText 回退 AWT；读取也按同样顺序兜底。
+        // 高负载下写入到可见可能延迟，带截止期轮询。
+        long deadline = System.currentTimeMillis() + 5000;
+        String clipboard = null;
+        while (System.currentTimeMillis() < deadline) {
+            java.util.concurrent.atomic.AtomicReference<String> snapshot = new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.CountDownLatch read = new java.util.concurrent.CountDownLatch(1);
+            Platform.runLater(() -> { snapshot.set(systemClipboardText()); read.countDown(); });
+            assertTrue(read.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            clipboard = snapshot.get();
+            if ("复制内容".equals(clipboard)) break;
+            Thread.sleep(80);
+        }
+        assertEquals("复制内容", clipboard);
     }
 
     private static void fx(Runnable action) throws Exception {
@@ -61,5 +74,19 @@ class AgentClipboardTest {
         });
         assertTrue(done.await(30, TimeUnit.SECONDS));
         if (error.get() != null) throw new AssertionError(error.get());
+    }
+
+    /** 与 ClipboardUtils 一致：先读 JavaFX 剪贴板，为空时回退 AWT。 */
+    private static String systemClipboardText() {
+        String fx = Clipboard.getSystemClipboard().getString();
+        if (fx != null && !fx.isEmpty()) return fx;
+        try {
+            java.awt.datatransfer.Transferable content =
+                    java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
+            if (content != null && content.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
+                return (String) content.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor);
+            }
+        } catch (Exception ignored) { }
+        return null;
     }
 }

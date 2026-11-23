@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.runzhi.aishell.controller.SettingsEditorController"
+      spacing="20" styleClass="settings-page">
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <TitledPane text="%settings.editor.title" expanded="true" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="%settings.editor.openMode" prefWidth="180"/>
+                <ComboBox fx:id="openModeCombo" prefWidth="200"/>
+            </HBox>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="%settings.editor.command" prefWidth="180"/>
+                <TextField fx:id="commandField" HBox.hgrow="ALWAYS" promptText="code {file}">
+                    <tooltip><Tooltip text="%settings.editor.command.tip"/></tooltip>
+                </TextField>
+            </HBox>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <CheckBox fx:id="autoUploadCheck" text="%settings.editor.autoUpload" selected="true"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+
+    <TitledPane text="%settings.editor.limits" expanded="false" styleClass="settings-section">
+        <VBox spacing="15">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="%settings.editor.maxInline" prefWidth="180"/>
+                <Spinner fx:id="maxInlineSpinner" min="1" max="64" amountToStepBy="1"
+                         prefWidth="120" editable="true"/>
+            </HBox>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="%settings.editor.maxExternal" prefWidth="180"/>
+                <Spinner fx:id="maxExternalSpinner" min="1" max="512" amountToStepBy="1"
+                         prefWidth="120" editable="true"/>
+            </HBox>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="%settings.editor.fallbackEncoding" prefWidth="180"/>
+                <ComboBox fx:id="fallbackEncodingCombo" prefWidth="160" editable="true"/>
+            </HBox>
+
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <Label text="%settings.editor.tempRetention" prefWidth="180"/>
+                <Spinner fx:id="retentionDaysSpinner" min="1" max="90" amountToStepBy="1"
+                         prefWidth="120" editable="true"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+</VBox>

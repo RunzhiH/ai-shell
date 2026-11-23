@@ -52,6 +52,10 @@ public class MainApplication extends Application {
 
             stage.setTitle("AIShell - SSH & AI Assistant");
             stage.setScene(scene);
+            // 最小尺寸：顶栏按钮、终端工具栏与侧栏在更小的窗口里会被压到无法点击，
+            // 980×600 是各工具栏还能保持完整命中区域的下限。
+            stage.setMinWidth(980);
+            stage.setMinHeight(600);
             stage.show();
 
             // 设置模块管理器的主舞台

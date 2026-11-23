@@ -7,6 +7,7 @@ package com.runzhi.aishell.terminal;
 
 import com.jcraft.jsch.Session;
 import com.techsenger.jeditermfx.ui.JediTermFxWidget;
+import com.techsenger.jeditermfx.ui.TerminalActionPresentation;
 import com.techsenger.jeditermfx.ui.settings.DefaultSettingsProvider;
 import com.techsenger.jeditermfx.core.TerminalColor;
 import com.techsenger.jeditermfx.core.TextStyle;
@@ -26,10 +27,18 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
+import java.util.List;
 import java.util.function.Consumer;
 
 /** Mounts a real xterm-compatible terminal emulator into an existing terminal tab. */
 public final class InteractiveTerminalView {
+
+    /** Agent 执行输出镜像进可见终端的字符上限，超出即截断（防止 FX 线程被超长输出灌爆）。 */
+    private static final int MIRROR_LIMIT = 4000;
+
     private InteractiveTerminalView() {
     }
 
@@ -142,9 +151,34 @@ public final class InteractiveTerminalView {
         return null;
     }
 
-    private static final class DarkTerminalSettings extends DefaultSettingsProvider {
+    static final class DarkTerminalSettings extends DefaultSettingsProvider {
         private static final TerminalColor FOREGROUND = TerminalColor.rgb(220, 220, 220);
         private static final TerminalColor BACKGROUND = TerminalColor.rgb(13, 17, 23);
+
+        /**
+         * 复制/粘贴不再要求 Shift：Windows/Linux 使用 Ctrl+C / Ctrl+V，macOS 使用 Cmd+C / Cmd+V。
+         * Ctrl+C 在没有选中文本时的语义由 JediTerm 处理：动作返回 false，按键继续交给
+         * processTerminalKeyPressed 发送 ETX，因此「中断当前进程」不受影响。
+         * 旧的 Ctrl+Shift+C / Ctrl+Shift+V 仅保留为兼容别名，菜单里展示的仍是第一组按键。
+         */
+        @Override
+        public TerminalActionPresentation getCopyActionPresentation() {
+            return new TerminalActionPresentation("Copy", clipboardKeyCombinations(KeyCode.C));
+        }
+
+        @Override
+        public TerminalActionPresentation getPasteActionPresentation() {
+            return new TerminalActionPresentation("Paste", clipboardKeyCombinations(KeyCode.V));
+        }
+
+        private static List<KeyCombination> clipboardKeyCombinations(KeyCode code) {
+            if (com.techsenger.jeditermfx.core.util.Platform.isMacOS()) {
+                return List.of(new KeyCodeCombination(code, KeyCombination.META_DOWN));
+            }
+            return List.of(
+                    new KeyCodeCombination(code, KeyCombination.CONTROL_DOWN),
+                    new KeyCodeCombination(code, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN));
+        }
 
         @Override
         public TextStyle getDefaultStyle() {
@@ -312,7 +346,13 @@ public final class InteractiveTerminalView {
         else javafx.application.Platform.runLater(writer);
     }
 
-    /** Mirrors output captured from the Agent's separate SSH exec channel into the visible terminal. */
+    /**
+     * Mirrors output captured from the Agent's separate SSH exec channel into the visible terminal.
+     * <p>
+     * 镜像输出上限 {@value #MIRROR_LIMIT} 字符：docker logs/build 等命令可能产生上 MB 输出，
+     * 全量逐行写进 JediTerm 会长时间独占 FX 线程并把缓冲区灌爆，表现为切回终端后无法键入；
+     * 超长输出截断并提示前往 Agent 工作区查看完整内容。
+     */
     public static void writeAgentExecutionOutput(Tab tab, String output) {
         if (tab == null || output == null || output.isBlank()) return;
         Object value = tab.getProperties().get("interactiveTerminalWidget");
@@ -321,7 +361,7 @@ public final class InteractiveTerminalView {
             var terminal = widget.getTerminal();
             terminal.characterAttributes(new TextStyle(
                     TerminalColor.rgb(139, 148, 158), DarkTerminalSettings.BACKGROUND));
-            String normalized = output.replace("\r\n", "\n").replace('\r', '\n');
+            String normalized = truncateMirror(output);
             for (String line : normalized.split("\n", -1)) {
                 terminal.writeCharacters(line);
                 terminal.carriageReturn();
@@ -333,6 +373,44 @@ public final class InteractiveTerminalView {
         };
         if (javafx.application.Platform.isFxApplicationThread()) writer.run();
         else javafx.application.Platform.runLater(writer);
+    }
+
+    /**
+     * 镜像输出截断：归一化换行后超过 {@link #MIRROR_LIMIT} 则保留头部并附截断提示。
+     * docker logs/build 等命令动辄上 MB 输出，全量写进终端会长时间独占 FX 线程。
+     */
+    static String truncateMirror(String output) {
+        if (output == null) {
+            return "";
+        }
+        String normalized = output.replace("\r\n", "\n").replace('\r', '\n');
+        if (normalized.length() <= MIRROR_LIMIT) {
+            return normalized;
+        }
+        return normalized.substring(0, MIRROR_LIMIT)
+                + "\n…（输出过长，已截断 " + MIRROR_LIMIT + " 字符；完整内容见 Agent 工作区）";
+    }
+
+    /**
+     * Agent 步骤结束后把终端输入区还给自己：移除残留的 AI 确认面板并把焦点拉回命令输入框，
+     * 避免用户切回终端准备自行输入时键入无效（GitHub #7）。
+     */
+    public static void restoreTerminalInput(Tab tab) {
+        if (tab == null || tab.getContent() == null) return;
+        Runnable restore = () -> {
+            Node confirmation = findById(tab.getContent(), "aiCommandConfirmation");
+            if (confirmation != null && confirmation.getParent() instanceof Pane confirmationParent) {
+                confirmationParent.getChildren().remove(confirmation);
+            }
+            Node input = findById(tab.getContent(), "commandInput");
+            if (input instanceof javafx.scene.control.TextField field) {
+                field.setDisable(false);
+                field.requestFocus();
+                field.positionCaret(field.getLength());
+            }
+        };
+        if (javafx.application.Platform.isFxApplicationThread()) restore.run();
+        else javafx.application.Platform.runLater(restore);
     }
 
     /** Shows a non-blocking command confirmation panel inside the current terminal tab. */

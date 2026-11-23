@@ -49,3 +49,15 @@
     -fx-font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
     -fx-font-size: 13px;
 }
+
+
+/* ==================== 编辑器（浅色覆盖） ==================== */
+.editor-window .lineno {
+    -fx-text-fill: -fx-text-secondary;
+}
+.syntax-comment { -fx-text-fill: #6A7B4F; }
+.syntax-string { -fx-text-fill: #A0521B; }
+.syntax-keyword { -fx-text-fill: #2155A4; -fx-font-weight: bold; }
+.syntax-number { -fx-text-fill: #8A4B2E; }
+.syntax-tag { -fx-text-fill: #2155A4; }
+.syntax-text { -fx-text-fill: -fx-text-primary; }

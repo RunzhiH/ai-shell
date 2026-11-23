@@ -20,7 +20,16 @@ public class AppConstants {
     
     // 应用程序信息
     public static final String APP_NAME = "AIShell";
-    public static final String APP_VERSION = "1.1.0";
+    /**
+     * 版本号: 打包时 maven-shade-plugin 把 ${project.version} 写进 MANIFEST.MF 的
+     * Implementation-Version, 这里运行时读取, 与 MSI/DMG 显示的版本号自动一致;
+     * IDE 里直接运行(没有清单)时回落为 "dev"。
+     */
+    public static final String APP_VERSION = readManifestVersion();
+    /**
+     * 项目仓库地址：关于对话框里展示并可点击跳转的 GitHub 链接。
+     */
+    public static final String APP_GITHUB_URL = "https://github.com/RunzhiH/ai-shell";
     
     // 配置相关
     public static final String CONFIG_DIR = ".aishell";
@@ -119,6 +128,12 @@ public class AppConstants {
     public static final int DEFAULT_MAX_TOKENS = 1024;
     public static final int DEFAULT_MAX_PREDICT_TOKENS = 1024;
     
+    private static String readManifestVersion() {
+        Package pkg = AppConstants.class.getPackage();
+        String version = (pkg != null) ? pkg.getImplementationVersion() : null;
+        return (version != null && !version.isEmpty()) ? version : "dev";
+    }
+
     private AppConstants() {
         // 私有构造函数防止实例化
     }

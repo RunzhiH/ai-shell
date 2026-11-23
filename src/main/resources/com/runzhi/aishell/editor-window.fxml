@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<BorderPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.runzhi.aishell.editor.EditorWindowController"
+            fx:id="root" styleClass="editor-window">
+    <top>
+        <VBox spacing="0" styleClass="editor-top">
+            <ToolBar fx:id="toolBar" styleClass="editor-toolbar">
+                <Button fx:id="saveButton" text="%editor.save" onAction="#onSave"
+                        styleClass="secondary-button" disable="true"/>
+                <Button fx:id="reloadButton" text="%editor.reload" onAction="#onReload"
+                        styleClass="secondary-button" disable="true"/>
+                <Button fx:id="saveAsButton" text="%editor.saveAs" onAction="#onSaveAs"
+                        styleClass="secondary-button" disable="true"/>
+                <Button fx:id="findButton" text="%editor.find" onAction="#onFindToggle"
+                        styleClass="secondary-button"/>
+                <MenuButton fx:id="openExternalButton" text="%editor.openExternal" onAction="#onOpenExternal"
+                            styleClass="secondary-button" disable="true"/>
+                <Button fx:id="openTerminalDirButton" text="%editor.openTerminalDir" onAction="#onOpenTerminalDir"
+                        styleClass="secondary-button" disable="true"/>
+            </ToolBar>
+            <HBox fx:id="findBar" styleClass="editor-find-bar" alignment="CENTER_LEFT" spacing="6"
+                  visible="false" managed="false">
+                <TextField fx:id="findField" prefWidth="240" promptText="%editor.find.prompt"
+                           onAction="#onFindNext"/>
+                <Button text="%editor.find.prev" onAction="#onFindPrev" styleClass="secondary-button"/>
+                <Button text="%editor.find.next" onAction="#onFindNext" styleClass="secondary-button"/>
+                <CheckBox fx:id="findCaseCheck" text="%editor.find.case"/>
+                <Separator orientation="VERTICAL"/>
+                <TextField fx:id="replaceField" prefWidth="240" promptText="%editor.replace.prompt"
+                           onAction="#onReplace"/>
+                <Button text="%editor.replace" onAction="#onReplace" styleClass="secondary-button"/>
+                <Button text="%editor.replace.all" onAction="#onReplaceAll" styleClass="secondary-button"/>
+                <Button text="%editor.find.close" onAction="#onFindClose" styleClass="secondary-button"/>
+            </HBox>
+        </VBox>
+    </top>
+    <center>
+        <TabPane fx:id="tabPane" tabClosingPolicy="ALL_TABS" styleClass="editor-tabpane"/>
+    </center>
+    <bottom>
+        <HBox fx:id="statusBar" styleClass="editor-status-bar" alignment="CENTER_LEFT" spacing="8">
+            <Label fx:id="statusPathLabel" textOverrun="CENTER_ELLIPSIS" maxWidth="700" HBox.hgrow="ALWAYS"/>
+            <Separator orientation="VERTICAL"/>
+            <ComboBox fx:id="encodingCombo" prefWidth="120" editable="false"/>
+            <Label fx:id="eolLabel" minWidth="46" styleClass="text-secondary"/>
+            <Label fx:id="sizeLabel" styleClass="text-secondary"/>
+            <Label fx:id="readonlyLabel" styleClass="text-secondary" visible="false" managed="false"/>
+            <Label fx:id="savedLabel" styleClass="text-secondary"/>
+        </HBox>
+    </bottom>
+</BorderPane>

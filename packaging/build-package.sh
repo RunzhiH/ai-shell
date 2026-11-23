@@ -16,12 +16,32 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 
-# 版本号与 pom.xml 保持一致，发版时只改一处
-APP_VER="$(sed -n 's/^ *<version>\(.*\)<\/version> *$/\1/p' pom.xml | head -n 1)"
+# 版本号: 基础版本取 pom.xml 的 revision 属性(major.minor), 第 3 段是自动构建号
+POM_VER="$(sed -n 's/^ *<revision>\(.*\)<\/revision> *$/\1/p' pom.xml | head -n 1)"
+if [ -z "${POM_VER}" ]; then
+    POM_VER="$(sed -n 's/^ *<version>\(.*\)<\/version> *$/\1/p' pom.xml | head -n 1)"
+fi
+BASE_VER="$(printf "%s" "${POM_VER}" | cut -d. -f1,2)"
+BUILD_NO=0
+if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+    # 干净构建 = 提交数×2; 有未提交改动 +1, 保证下一条提交的构建号必然更大
+    COMMITS="$(git rev-list --count HEAD)"
+    BUILD_NO=$(( COMMITS * 2 ))
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        BUILD_NO=$(( BUILD_NO + 1 ))
+    fi
+else
+    echo '警告: 未找到 git 仓库, 无法计算自动构建号' >&2
+fi
+if [ "${BUILD_NO}" -gt 0 ]; then
+    APP_VER="${BASE_VER}.${BUILD_NO}"
+else
+    APP_VER="${POM_VER}"
+fi
 IMAGE_NAME="AIShell"
 JAR_NAME="${IMAGE_NAME}-${APP_VER}.jar"
 
-echo "AIShell 版本: ${APP_VER}"
+echo "AIShell 版本: ${APP_VER} (基础 ${BASE_VER} + 自动构建号 ${BUILD_NO})"
 
 # 1. 定位 JDK（jpackage / jlink 都是 JDK 自带的）
 JDK_HOME="${JAVA_HOME:-}"
@@ -46,7 +66,7 @@ echo "使用 JDK: ${JDK_HOME}"
 
 # 2. 构建胖 jar (maven-shade-plugin 已内置于 pom.xml)
 [ -x ./mvnw ] || chmod +x ./mvnw
-./mvnw clean package -DskipTests
+./mvnw clean package -DskipTests "-Drevision=${APP_VER}"
 
 # 3. 定制 JRE (与 Windows 脚本一致的模块集合)
 if [ -d target/runtime ]; then rm -rf target/runtime; fi

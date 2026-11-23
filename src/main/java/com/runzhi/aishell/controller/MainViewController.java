@@ -15,8 +15,10 @@ import com.runzhi.aishell.common.config.StartupPage;
 import com.runzhi.aishell.common.enhancement.ShellEnhancementManager;
 import com.runzhi.aishell.common.enhancement.ThemeEnhancer;
 import com.runzhi.aishell.common.util.ButtonManager;
+import com.runzhi.aishell.common.util.ClipboardUtils;
 import com.runzhi.aishell.common.util.DialogUtils;
 import com.runzhi.aishell.common.util.SystemInfoProvider;
+import com.runzhi.aishell.common.update.UpdateChecker;
 import com.runzhi.aishell.common.util.UITools;
 import com.runzhi.aishell.common.validation.InputValidator;
 import com.runzhi.aishell.common.validation.BoundaryChecker;
@@ -47,11 +49,15 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
 
+import java.awt.Desktop;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Objects;
@@ -67,6 +73,8 @@ public class MainViewController extends BaseController implements Initializable 
     private static final String DEFAULT_STATUS_DISCONNECTED = "已断开";
     private static final String ABOUT_DIALOG_TITLE = "关于 AIShell";
     private static final String ABOUT_DIALOG_HEADER = "AIShell - SSH & AI Assistant";
+    /** 上次自动检查更新的日期（epoch day），存于 app_configs.json，每天至多自动检查一次。 */
+    private static final String LAST_UPDATE_CHECK_KEY = "update.lastCheckEpochDay";
     private static final String ABOUT_DIALOG_CONTENT = "版本: " + AppConstants.APP_VERSION + "\n这是一个集成了SSH连接和AI助手功能的桌面应用。\n\n作者: Runzhi\n\n基于JavaFX开发";
 
     @FXML
@@ -234,6 +242,9 @@ public class MainViewController extends BaseController implements Initializable 
         }
         initializeSidebarStorageTable();
 
+        // 清理超过保留期的外部编辑器临时文件（方案 §3.3 第 7 条）
+        com.runzhi.aishell.editor.ExternalEditorService.cleanupStaleTempDirs();
+
         // 初始化按钮管理器
         buttonManager = ButtonManager.getInstance();
 
@@ -315,6 +326,9 @@ public class MainViewController extends BaseController implements Initializable 
                 }
             });
         refreshFileEntryState();
+
+        // 自动检查更新（每天至多一次，失败静默；版本为 dev 时不检查）
+        checkForUpdatesAutomatically();
     }
 
     @SuppressWarnings("unchecked")
@@ -1317,14 +1331,137 @@ public class MainViewController extends BaseController implements Initializable 
             alert.setTitle(ABOUT_DIALOG_TITLE);
             alert.setHeaderText(ABOUT_DIALOG_HEADER);
             String fullContent = ABOUT_DIALOG_CONTENT + "\n\n联系方式: support@aishell.com";
-            alert.setContentText(fullContent);
 
             // 设置对话框样式
             DialogPane dialogPane = alert.getDialogPane();
             UITools.setDialogCSS(dialogPane);
 
+            // setContentText 无法渲染超链接，改用 Label + Hyperlink 组成对话框内容，
+            // 使 GitHub 仓库地址在关于面板里可点击跳转
+            Label contentLabel = new Label(fullContent);
+            contentLabel.setWrapText(true);
+            Hyperlink githubLink = new Hyperlink("GitHub: " + AppConstants.APP_GITHUB_URL);
+            githubLink.setTooltip(new Tooltip(AppConstants.APP_GITHUB_URL));
+            githubLink.setOnAction(event -> openInBrowser(AppConstants.APP_GITHUB_URL));
+            Hyperlink updateLink = new Hyperlink("检查更新（当前版本 " + AppConstants.APP_VERSION + "）");
+            updateLink.setTooltip(new Tooltip("查询 GitHub 上的最新发布版本"));
+            updateLink.setOnAction(event -> checkForUpdates());
+            VBox content = new VBox(8, contentLabel, githubLink, updateLink);
+            content.setPadding(new Insets(4, 0, 4, 0));
+            dialogPane.setContent(content);
+
             alert.showAndWait();
         });
+    }
+
+    /**
+     * 用系统默认浏览器打开指定地址。
+     * <p>
+     * 优先使用 {@link Desktop#browse}；当前平台不支持（如无桌面环境的 Linux）时按
+     * 操作系统回退到 rundll32 / open / xdg-open 命令。全部失败则把地址复制到剪贴板
+     * 并提示用户手动访问。
+     */
+    private void openInBrowser(String url) {
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop desktop = Desktop.getDesktop();
+                if (desktop.isSupported(Desktop.Action.BROWSE)) {
+                    desktop.browse(new URI(url));
+                    return;
+                }
+            }
+            String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            List<String> command = os.contains("win")
+                    ? List.of("rundll32", "url.dll,FileProtocolHandler", url)
+                    : os.contains("mac")
+                            ? List.of("open", url)
+                            : List.of("xdg-open", url);
+            new ProcessBuilder(command)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+        } catch (Exception e) {
+            log.warn("打开浏览器失败: {}", url, e);
+            boolean copied = ClipboardUtils.copyText(url);
+            showAlert("无法打开浏览器" + (copied ? "，地址已复制到剪贴板" : "") + "：" + url);
+        }
+    }
+
+    /**
+     * 检查软件更新（帮助菜单「检查更新」与关于对话框共用入口）。
+     * 后台查询 GitHub 最新 release：有新版本则弹出更新提示（可前往下载）；
+     * 已是最新或查询失败时，手动触发才给出反馈，自动检查保持静默。
+     */
+    @FXML
+    public void checkForUpdates() {
+        checkForUpdates(false);
+    }
+
+    /**
+     * 启动后自动检查更新：每天至多一次，发现新版本时提示前往下载；
+     * IDE 直跑（版本为 dev）或检查失败时不打扰用户。
+     */
+    private void checkForUpdatesAutomatically() {
+        String current = AppConstants.APP_VERSION;
+        if ("dev".equals(current)) {
+            return;
+        }
+        long today = LocalDate.now().toEpochDay();
+        Object last = com.runzhi.aishell.common.config.ConfigManager.getInstance().loadAppConfig().get(LAST_UPDATE_CHECK_KEY);
+        if (last instanceof Number value && value.longValue() == today) {
+            return;
+        }
+        com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
+            com.runzhi.aishell.common.config.ConfigManager.getInstance().saveAppConfig(LAST_UPDATE_CHECK_KEY, today);
+            java.util.Optional<UpdateChecker.UpdateInfo> info = UpdateChecker.fetchLatestRelease();
+            if (info.isEmpty() || !UpdateChecker.isNewer(current, info.get().latestVersion())) {
+                return;
+            }
+            Platform.runLater(() -> showUpdateAvailableDialog(current, info.get()));
+        });
+    }
+
+    /** 查询 GitHub 最新 release 并反馈结果；automatic 为 true 时只在有新版本时提示。 */
+    private void checkForUpdates(boolean automatic) {
+        String current = AppConstants.APP_VERSION;
+        com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
+            java.util.Optional<UpdateChecker.UpdateInfo> info = UpdateChecker.fetchLatestRelease();
+            Platform.runLater(() -> {
+                if (info.isEmpty()) {
+                    if (!automatic) {
+                        showAlert("检查更新失败：无法获取 GitHub 发布信息，请稍后重试或直接前往 GitHub 查看。");
+                    }
+                    return;
+                }
+                UpdateChecker.UpdateInfo latest = info.get();
+                if (UpdateChecker.isNewer(current, latest.latestVersion())) {
+                    showUpdateAvailableDialog(current, latest);
+                } else if (!automatic) {
+                    showAlert("当前已是最新版本：" + current);
+                }
+            });
+        });
+    }
+
+    /** 展示「发现新版本」对话框，提供前往下载页面的入口。 */
+    private void showUpdateAvailableDialog(String currentVersion, UpdateChecker.UpdateInfo info) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("发现新版本");
+        alert.setHeaderText("AIShell " + info.latestVersion() + " 已发布");
+        String notes = info.releaseNotes() == null ? "" : info.releaseNotes();
+        Label content = new Label("当前版本：" + currentVersion + "\n最新版本：" + info.latestVersion()
+                + (notes.isEmpty() ? "" : "\n\n更新内容：\n" + notes));
+        content.setWrapText(true);
+        DialogPane dialogPane = alert.getDialogPane();
+        UITools.setDialogCSS(dialogPane);
+        dialogPane.setContent(content);
+        ButtonType download = new ButtonType("前往下载", ButtonBar.ButtonData.OK_DONE);
+        ButtonType later = new ButtonType("以后再说", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(download, later);
+        java.util.Optional<ButtonType> choice = alert.showAndWait();
+        if (choice.orElse(later) == download) {
+            openInBrowser(info.releaseUrl());
+        }
     }
 
     /**

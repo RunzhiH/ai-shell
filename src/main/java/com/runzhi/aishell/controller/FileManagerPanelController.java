@@ -22,11 +22,13 @@ import javafx.scene.input.DragEvent;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.ResourceBundle;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -150,6 +152,13 @@ public class FileManagerPanelController extends BaseController implements Initia
     @FXML private Tab localBrowserTab,remoteBrowserTab,transferQueueTab;
     @FXML private javafx.scene.layout.StackPane localTreeHost,remoteTreeHost,queueHost;
     @FXML private Label localDirectoryLabel,remoteDirectoryLabel;
+    @FXML private javafx.scene.layout.FlowPane localFileToolbar,remoteFileToolbar;
+    private static final java.util.prefs.Preferences PREFS =
+            java.util.prefs.Preferences.userNodeForPackage(FileManagerPanelController.class);
+    private static final String SHOW_HIDDEN_KEY = "fileManager.showHidden";
+    /** 显示/隐藏 隐藏文件：本地按平台语义（Files.isHidden），远程按点号开头。 */
+    private volatile boolean showHidden = PREFS.getBoolean(SHOW_HIDDEN_KEY, true);
+    private javafx.scene.control.ToggleButton showHiddenToggleLocal, showHiddenToggleRemote;
     @FXML private javafx.scene.control.SplitPane localFileSplit,remoteFileSplit;
     private com.runzhi.aishell.ui.DirectoryTree localTree,remoteTree;
     private com.runzhi.aishell.ui.TransferQueueView queueView;
@@ -158,6 +167,9 @@ public class FileManagerPanelController extends BaseController implements Initia
     private Path requestedLocalDirectory;
     private volatile String currentTransferJobId;
     private final java.util.Set<String> ownedQueueJobs=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 文件面板发起的外部编辑会话（含系统默认程序打开），面板销毁时统一清理。 */
+    private final java.util.List<com.runzhi.aishell.editor.ExternalEditorService> externalServices =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
     /** Successful paths are the sole source for file actions, even while a failed path remains in the editor. */
     private String remoteDirectory() { return loadedRemotePath==null ? (pathField==null?"~":pathField.getText()) : loadedRemotePath; }
@@ -177,6 +189,60 @@ public class FileManagerPanelController extends BaseController implements Initia
                 && job.port()==endpointPort(sshService,currentTabId) && job.host().equals(sshService.getHostForTab(currentTabId))
                 && job.username().equals(sshService.getUsernameForTab(currentTabId));
     }
+    /** 远程（Unix）隐藏语义：文件名以点号开头；本地侧用 Files.isHidden 的平台语义。 */
+    static boolean isHiddenRemoteName(String name) {
+        return name != null && !name.isEmpty() && name.charAt(0) == '.';
+    }
+
+    /** Files.isHidden 抛 IOException：包一层供 Stream 过滤使用，读取失败视为非隐藏。 */
+    private static boolean isHiddenLocal(Path path) {
+        try { return Files.isHidden(path); }
+        catch (java.io.IOException ignored) { return false; }
+    }
+
+    private ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> visibleRemoteOnly(
+            ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> listed) {
+        List<com.runzhi.aishell.ssh.domain.FileInfo> visible = new ArrayList<>();
+        for (com.runzhi.aishell.ssh.domain.FileInfo file : listed) {
+            if (!isHiddenRemoteName(file.getName())) visible.add(file);
+        }
+        return FXCollections.observableArrayList(visible);
+    }
+
+    /** 两侧工具栏各放一个“显示隐藏文件”开关，状态持久化并联动表格与目录树。 */
+    private void installShowHiddenToggles() {
+        showHiddenToggleLocal = createShowHiddenToggle();
+        showHiddenToggleRemote = createShowHiddenToggle();
+        insertToggle(localFileToolbar, showHiddenToggleLocal, localDirectoryLabel);
+        insertToggle(remoteFileToolbar, showHiddenToggleRemote, remoteDirectoryLabel);
+    }
+
+    private void insertToggle(javafx.scene.layout.FlowPane toolbar, javafx.scene.control.ToggleButton toggle,
+                              Label anchorLabel) {
+        if (toolbar == null) return;
+        ObservableList<javafx.scene.Node> children = toolbar.getChildren();
+        int at = anchorLabel == null ? children.size() : children.indexOf(anchorLabel);
+        children.add(at < 0 ? children.size() : at, toggle);
+    }
+
+    private javafx.scene.control.ToggleButton createShowHiddenToggle() {
+        javafx.scene.control.ToggleButton toggle = new javafx.scene.control.ToggleButton(I18n.tr("fm.showHidden"));
+        toggle.setSelected(showHidden);
+        toggle.getStyleClass().add("secondary-button");
+        toggle.setTooltip(new Tooltip(I18n.tr("fm.showHidden.tip")));
+        toggle.setFocusTraversable(false);
+        toggle.setOnAction(event -> {
+            showHidden = toggle.isSelected();
+            PREFS.putBoolean(SHOW_HIDDEN_KEY, showHidden);
+            if (showHiddenToggleLocal != null && showHiddenToggleLocal != toggle) showHiddenToggleLocal.setSelected(showHidden);
+            if (showHiddenToggleRemote != null && showHiddenToggleRemote != toggle) showHiddenToggleRemote.setSelected(showHidden);
+            refreshFileList();
+            if (localTree != null) localTree.reload();
+            if (remoteTree != null) remoteTree.reload();
+        });
+        return toggle;
+    }
+
     private void initializeNavigation() {
         if(localTreeHost==null) return;
         compactDirectorySplit(localFileSplit,localTreeHost);
@@ -184,7 +250,8 @@ public class FileManagerPanelController extends BaseController implements Initia
         var io=com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool();
         localTree=new com.runzhi.aishell.ui.DirectoryTree(io,()->path->{
             try(var children=Files.list(Paths.get(path))) {
-                return children.filter(child->Files.isDirectory(child,java.nio.file.LinkOption.NOFOLLOW_LINKS)).map(Path::toString).toList();
+                return children.filter(child->Files.isDirectory(child,java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                        .filter(child->showHidden||!isHiddenLocal(child)).map(Path::toString).toList();
             } catch(Exception failure) { throw new IllegalStateException(failure); }
         },path->changeLocalDirectory(Paths.get(path)));
         localTree.useContext("local",java.util.stream.Stream.concat(
@@ -197,6 +264,7 @@ public class FileManagerPanelController extends BaseController implements Initia
                 try { String canonical=service.canonicalDirectoryForTab(session,path); String directory=canonical==null?path:canonical;
                     return service.listFilesForTab(session,directory).stream().filter(this::isRemoteDirectory)
                         .filter(file->!file.getName().equals(".") && !file.getName().equals(".."))
+                        .filter(file->showHidden||!isHiddenRemoteName(file.getName()))
                         .map(file->joinRemotePath(directory,file.getName())).toList(); }
                 catch(Exception failure) { throw new IllegalStateException(failure); }
             };
@@ -332,6 +400,7 @@ public class FileManagerPanelController extends BaseController implements Initia
     public void initialize(URL location, ResourceBundle resources) {
         // 初始化表格列
         initTableColumns();
+        installShowHiddenToggles();
         
         // 设置表格数据
         remoteFileTable.setItems(remoteFiles);
@@ -351,10 +420,20 @@ public class FileManagerPanelController extends BaseController implements Initia
         remoteFileTable.setRowFactory(table -> {
             TableRow<com.runzhi.aishell.ssh.domain.FileInfo> row = new TableRow<>();
             row.setOnMouseClicked(event -> {
-                if (event.getClickCount() == 2 && !row.isEmpty() && isRemoteDirectory(row.getItem())) {
-                    pathField.setText(joinRemotePath(pathField.getText(), row.getItem().getName()));
-                    requestRemoteRefresh(true);
+                if (event.getClickCount() == 2 && !row.isEmpty()) {
+                    com.runzhi.aishell.ssh.domain.FileInfo item = row.getItem();
+                    if (isRemoteDirectory(item)) {
+                        navigateIntoRemoteDirectory(item);
+                    } else {
+                        openRemoteFileEntry(item);
+                    }
                 }
+            });
+            row.setOnContextMenuRequested(event -> {
+                if (row.isEmpty()) return;
+                ContextMenu menu = buildRemoteFileMenu(row.getItem());
+                menu.show(row, event.getScreenX(), event.getScreenY());
+                event.consume();
             });
             return row;
         });
@@ -386,7 +465,15 @@ public class FileManagerPanelController extends BaseController implements Initia
                         && (row.getItem().getPermission() & 0040000) != 0) {
                     Path next = localDirectory.resolve(row.getItem().getName()).normalize();
                     changeLocalDirectory(next);
+                } else if (event.getClickCount() == 2 && !row.isEmpty()) {
+                    openLocalFileEntry(row.getItem());
                 }
+            });
+            row.setOnContextMenuRequested(event -> {
+                if (row.isEmpty()) return;
+                ContextMenu menu = buildLocalFileMenu(row.getItem());
+                menu.show(row, event.getScreenX(), event.getScreenY());
+                event.consume();
             });
             return row;
         });
@@ -524,6 +611,102 @@ public class FileManagerPanelController extends BaseController implements Initia
         });
     }
 
+    /** 本地侧新建空文件（在当前本地路径下创建） */
+    @FXML
+    private void createLocalFile() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle(I18n.tr("fm.newfile.title"));
+        dialog.setHeaderText(I18n.tr("fm.newfile.header"));
+        dialog.setContentText(I18n.tr("fm.newfile.content"));
+        dialog.showAndWait().ifPresent(fileName -> createLocalFileNamed(fileName));
+    }
+
+    /** 按给定名称创建本地空文件；供测试直接调用。返回是否创建成功（失败弹出告警）。 */
+    boolean createLocalFileNamed(String fileName) {
+        String trimmed = fileName == null ? "" : fileName.trim();
+        if (trimmed.isEmpty()) {
+            ControllerUtils.showWarningAlert(I18n.tr("fm.warn.title"), I18n.tr("fm.newfile.name.empty"));
+            return false;
+        }
+        Path parent = localDirectory;
+        if (parent == null || parent.toString().isBlank()) {
+            showErrorAlert(I18n.tr("fm.newfile.local.path.empty"));
+            return false;
+        }
+        Path target = parent.resolve(trimmed);
+        try {
+            Files.createFile(target);
+            updateStatus(I18n.tr("fm.newfile.created", trimmed));
+            loadLocalFiles();
+            return true;
+        } catch (java.nio.file.FileAlreadyExistsException alreadyExists) {
+            showErrorAlert(I18n.tr("fm.newfile.exists", target.toString()));
+            updateStatus(I18n.tr("fm.create.failed.status"));
+            return false;
+        } catch (Exception e) {
+            log.error("Create local file error", e);
+            showErrorAlert(I18n.tr("fm.newfile.failed", target.toString()));
+            updateStatus(I18n.tr("fm.create.failed.status"));
+            return false;
+        }
+    }
+
+    /** 远程侧新建空文件（在当前远程路径下创建） */
+    @FXML
+    private void createNewFile() {
+        final var targetService = sshService;
+        final String targetTab = currentTabId;
+        final String parentPath = remoteDirectory();
+        final int targetGeneration = loadGeneration.get();
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle(I18n.tr("fm.newfile.title"));
+        dialog.setHeaderText(I18n.tr("fm.newfile.header"));
+        dialog.setContentText(I18n.tr("fm.newfile.content"));
+        dialog.showAndWait().ifPresent(fileName -> createRemoteFileNamed(fileName, targetService,
+                targetTab, parentPath, targetGeneration));
+    }
+
+    /** 按给定名称创建远程空文件；供测试直接调用。 */
+    boolean createRemoteFileNamed(String fileName, com.runzhi.aishell.ssh.SSHService targetService,
+                                  String targetTab, String parentPath, int targetGeneration) {
+        String trimmed = fileName == null ? "" : fileName.trim();
+        if (trimmed.isEmpty()) {
+            ControllerUtils.showWarningAlert(I18n.tr("fm.warn.title"), I18n.tr("fm.newfile.name.empty"));
+            return false;
+        }
+        if (targetService == null || targetTab == null || targetGeneration != loadGeneration.get()) {
+            showErrorAlert(I18n.tr("fm.newfile.ssh.disconnected"));
+            return false;
+        }
+        com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
+            try {
+                String remotePath = joinRemotePath(parentPath, trimmed);
+                if (targetService.remotePathExistsForTab(targetTab, remotePath)) {
+                    Platform.runLater(() -> {
+                        if (targetGeneration != loadGeneration.get()) return;
+                        showErrorAlert(I18n.tr("fm.newfile.exists", remotePath));
+                        updateStatus(I18n.tr("fm.create.failed.status"));
+                    });
+                    return;
+                }
+                targetService.writeBytesForTab(targetTab, remotePath, new byte[0], 0L);
+                Platform.runLater(() -> {
+                    if (targetGeneration != loadGeneration.get()) return;
+                    updateStatus(I18n.tr("fm.newfile.created", trimmed));
+                    loadRemoteFiles();
+                });
+            } catch (Exception e) {
+                log.error("Create remote file error", e);
+                Platform.runLater(() -> {
+                    if (targetGeneration != loadGeneration.get()) return;
+                    showErrorAlert(I18n.tr("fm.newfile.failed", e.getMessage()));
+                    updateStatus(I18n.tr("fm.create.failed.status"));
+                });
+            }
+        });
+        return true;
+    }
+
     @FXML
     private void deleteSelectedItems() {
         // 删除选中的本地文件
@@ -598,7 +781,8 @@ public class FileManagerPanelController extends BaseController implements Initia
             try {
                 List<FileInfo> loaded = new ArrayList<>();
                 try (Stream<Path> paths = Files.list(requestedDirectory)) {
-                    paths.sorted((left, right) -> left.getFileName().toString()
+                    paths.filter(path -> showHidden || !isHiddenLocal(path))
+                            .sorted((left, right) -> left.getFileName().toString()
                                     .compareToIgnoreCase(right.getFileName().toString()))
                             .forEach(path -> {
                                 try {
@@ -689,8 +873,10 @@ public class FileManagerPanelController extends BaseController implements Initia
                 }
                 String canonical=requestService.canonicalDirectoryForTab(requestTabId,requestPath);
                 final String successfulPath=canonical==null?requestPath:canonical;
-                ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> files =
+                ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> listed =
                         requestService.listFilesForTab(requestTabId, successfulPath);
+                ObservableList<com.runzhi.aishell.ssh.domain.FileInfo> files =
+                        showHidden || listed == null ? listed : visibleRemoteOnly(listed);
 
                 if (generation != loadGeneration.get()) {
                     return;
@@ -974,6 +1160,297 @@ public class FileManagerPanelController extends BaseController implements Initia
                         fileManager.bindStandaloneTarget(service, tabId);
                     }
                 });
+    }
+
+    // ==================== 编辑器入口（方案 §3.1） ====================
+
+    /** 双击远端目录：进入子目录并刷新列表。 */
+    private void navigateIntoRemoteDirectory(com.runzhi.aishell.ssh.domain.FileInfo item) {
+        pathField.setText(joinRemotePath(pathField.getText(), item.getName()));
+        requestRemoteRefresh(true);
+    }
+
+    /** 双击远端文件：按 editor.openMode 派发（默认内置编辑器）。 */
+    private void openRemoteFileEntry(FileInfo file) {
+        if (!isCurrentTabConnected()) {
+            updateStatus(I18n.tr("fm.ssh.disconnected"));
+            return;
+        }
+        String path = joinRemotePath(remoteDirectory(), file.getName());
+        com.runzhi.aishell.editor.EditorPreferences.OpenMode mode = com.runzhi.aishell.editor.EditorPreferences.openMode();
+        if (mode == com.runzhi.aishell.editor.EditorPreferences.OpenMode.EXTERNAL) {
+            openRemoteInExternalEditor(path);
+        } else if (mode == com.runzhi.aishell.editor.EditorPreferences.OpenMode.ASK) {
+            askRemoteOpenMode(path);
+        } else {
+            openRemoteInBuiltinEditor(path);
+        }
+    }
+
+    /** editor.openMode=ask 时弹选择框。 */
+    private void askRemoteOpenMode(String path) {
+        Alert alert = new Alert(Alert.AlertType.NONE);
+        alert.setTitle(I18n.tr("editor.open.ask.title"));
+        alert.setHeaderText(I18n.tr("editor.open.ask.header", path));
+        ButtonType builtin = new ButtonType(I18n.tr("fm.edit"), ButtonBar.ButtonData.YES);
+        ButtonType external = new ButtonType(I18n.tr("fm.edit.external"), ButtonBar.ButtonData.NO);
+        ButtonType cancel = new ButtonType(I18n.tr("editor.conflict.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(builtin, external, cancel);
+        Optional<ButtonType> chosen = alert.showAndWait();
+        if (chosen.isEmpty() || chosen.get() == cancel) return;
+        if (chosen.get() == external) openRemoteInExternalEditor(path);
+        else openRemoteInBuiltinEditor(path);
+    }
+
+    private ContextMenu buildRemoteFileMenu(com.runzhi.aishell.ssh.domain.FileInfo item) {
+        String path = joinRemotePath(remoteDirectory(), item.getName());
+        MenuItem edit = new MenuItem(I18n.tr("fm.edit"));
+        edit.setOnAction(event -> openRemoteInBuiltinEditor(path));
+        Menu external = buildExternalEditorMenu(
+                () -> openRemoteInExternalEditor(path),
+                editor -> launchRemoteExternal(path, editor));
+        MenuItem download = new MenuItem(I18n.tr("fm.download"));
+        download.setOnAction(event -> downloadFiles());
+        MenuItem details = new MenuItem(I18n.tr("fm.phase.details"));
+        details.setOnAction(event -> remoteDetails());
+        return new ContextMenu(edit, external, download, details);
+    }
+
+    private ContextMenu buildLocalFileMenu(FileInfo item) {
+        Path path = localDirectory.resolve(item.getName()).normalize();
+        MenuItem edit = new MenuItem(I18n.tr("fm.edit"));
+        edit.setOnAction(event -> openLocalInBuiltinEditor(path));
+        Menu external = buildExternalEditorMenu(
+                () -> openLocalInExternalEditor(path),
+                editor -> launchLocalExternal(path, editor));
+        MenuItem details = new MenuItem(I18n.tr("fm.phase.details"));
+        details.setOnAction(event -> localDetails());
+        return new ContextMenu(edit, external, details);
+    }
+
+    /**
+     * 外部编辑器二级菜单：自动选择 + 检测到的全部编辑器（含系统默认），
+     * 每次展开时重新检测，选任意一项即以该项打开并记为首选，可随时再换。
+     */
+    private Menu buildExternalEditorMenu(Runnable autoAction,
+                                          java.util.function.Consumer<com.runzhi.aishell.editor.ExternalEditor> chooser) {
+        Menu menu = new Menu(I18n.tr("fm.edit.external"));
+        MenuItem auto = new MenuItem(I18n.tr("fm.edit.external.auto"));
+        auto.setOnAction(event -> autoAction.run());
+        menu.getItems().add(auto);
+        menu.getItems().add(new SeparatorMenuItem());
+        for (com.runzhi.aishell.editor.ExternalEditor editor : com.runzhi.aishell.editor.ExternalEditorDetector.detectAvailable()) {
+            MenuItem item = new MenuItem(editor.name());
+            item.setOnAction(event -> {
+                com.runzhi.aishell.editor.EditorPreferences.setPreferredEditorName(editor.name());
+                chooser.accept(editor);
+            });
+            menu.getItems().add(item);
+        }
+        menu.getItems().add(new SeparatorMenuItem());
+        MenuItem other = new MenuItem(I18n.tr("fm.edit.external.other"));
+        other.setOnAction(event -> {
+            com.runzhi.aishell.editor.ExternalEditor picked = pickExternalEditorProgram();
+            if (picked != null) {
+                com.runzhi.aishell.editor.EditorPreferences.setPreferredEditorName(picked.name());
+                chooser.accept(picked);
+            }
+        });
+        menu.getItems().add(other);
+        return menu;
+    }
+
+    /** 弹出文件选择器让用户挑选任意外部程序。 */
+    private com.runzhi.aishell.editor.ExternalEditor pickExternalEditorProgram() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(I18n.tr("fm.edit.external.other"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
+                I18n.tr("fm.edit.external.programs"), "*.exe", "*.cmd", "*.bat", "*.sh", "*"));
+        java.io.File selected;
+        try {
+            selected = chooser.showOpenDialog(null);
+        } catch (Exception failure) {
+            log.warn("External program picker failed", failure);
+            return null;
+        }
+        if (selected == null || !selected.isFile()) return null;
+        String fileName = selected.getName();
+        int dot = fileName.lastIndexOf('.');
+        return new com.runzhi.aishell.editor.ExternalEditor(dot > 0 ? fileName.substring(0, dot) : fileName,
+                java.util.List.of(selected.getAbsolutePath(), "{file}"),
+                com.runzhi.aishell.editor.ExternalEditor.Source.CUSTOM);
+    }
+
+    /** 在内置编辑器窗口中打开远端文件（同一会话复用同一窗口，同一路径复用标签）。 */
+    void openRemoteInBuiltinEditor(String remotePath) {
+        final var service = sshService;
+        final String session = currentTabId;
+        if (service == null || session == null || !isCurrentTabConnected()) {
+            updateStatus(I18n.tr("fm.ssh.disconnected"));
+            return;
+        }
+        String endpoint = endpointDisplay(service, session);
+        String title = I18n.tr("editor.title", endpoint);
+        com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance().getNavigationManager()
+                .openInNewWindow("editor-window.fxml", title, "editor-window.fxml:" + session, controller -> {
+                    if (controller instanceof com.runzhi.aishell.editor.EditorWindowController editor) {
+                        editor.bindRemote(service, session);
+                        editor.setOpenInTerminalHandler(directory -> openTerminalDirectory(session, directory));
+                        editor.openRemote(remotePath);
+                    }
+                });
+    }
+
+    /** 用外部编辑器（临时文件 + 保存回传）打开远端文件。 */
+    private void openRemoteInExternalEditor(String remotePath) {
+        final var service = sshService;
+        final String session = currentTabId;
+        if (service == null || session == null || !isCurrentTabConnected()) {
+            updateStatus(I18n.tr("fm.ssh.disconnected"));
+            return;
+        }
+        try {
+            com.runzhi.aishell.editor.ExternalEditorService external =
+                    new com.runzhi.aishell.editor.ExternalEditorService(service, session,
+                            new com.runzhi.aishell.editor.EditorInteraction(this::updateStatus));
+            externalServices.add(external);
+            external.openRemote(remotePath);
+        } catch (Exception failure) {
+            log.error("Failed to start external editor for {}", remotePath, failure);
+            showErrorAlert(I18n.tr("editor.external.notFound") + ": " + failure.getMessage());
+        }
+    }
+
+    /** 用二级菜单中指定的编辑器打开远端文件；系统默认走 openRemoteWithSystemDefault。 */
+    private void launchRemoteExternal(String remotePath, com.runzhi.aishell.editor.ExternalEditor editor) {
+        final var service = sshService;
+        final String session = currentTabId;
+        if (service == null || session == null || !isCurrentTabConnected()) {
+            updateStatus(I18n.tr("fm.ssh.disconnected"));
+            return;
+        }
+        try {
+            com.runzhi.aishell.editor.ExternalEditorService external =
+                    new com.runzhi.aishell.editor.ExternalEditorService(service, session,
+                            new com.runzhi.aishell.editor.EditorInteraction(this::updateStatus));
+            externalServices.add(external);
+            if (editor == null || editor.isSystemDefault()) external.openRemoteWithSystemDefault(remotePath);
+            else external.openRemoteWith(remotePath, editor);
+        } catch (Exception failure) {
+            log.error("Failed to start external editor for {}", remotePath, failure);
+            showErrorAlert(I18n.tr("editor.external.notFound") + ": " + failure.getMessage());
+        }
+    }
+
+    /** 下载远端文件后用系统默认程序打开。 */
+    private void openRemoteWithSystemDefault(String remotePath) {
+        launchRemoteExternal(remotePath, com.runzhi.aishell.editor.ExternalEditorDetector.systemDefault());
+    }
+
+    /** 双击本地文件：按 editor.openMode 派发。 */
+    private void openLocalFileEntry(FileInfo file) {
+        Path path = localDirectory.resolve(file.getName()).normalize();
+        com.runzhi.aishell.editor.EditorPreferences.OpenMode mode = com.runzhi.aishell.editor.EditorPreferences.openMode();
+        if (mode == com.runzhi.aishell.editor.EditorPreferences.OpenMode.EXTERNAL) {
+            openLocalInExternalEditor(path);
+        } else if (mode == com.runzhi.aishell.editor.EditorPreferences.OpenMode.ASK) {
+            askLocalOpenMode(path);
+        } else {
+            openLocalInBuiltinEditor(path);
+        }
+    }
+
+    private void askLocalOpenMode(Path path) {
+        Alert alert = new Alert(Alert.AlertType.NONE);
+        alert.setTitle(I18n.tr("editor.open.ask.title"));
+        alert.setHeaderText(I18n.tr("editor.open.ask.header", path.getFileName().toString()));
+        ButtonType builtin = new ButtonType(I18n.tr("fm.edit"), ButtonBar.ButtonData.YES);
+        ButtonType external = new ButtonType(I18n.tr("fm.edit.external"), ButtonBar.ButtonData.NO);
+        ButtonType cancel = new ButtonType(I18n.tr("editor.conflict.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(builtin, external, cancel);
+        Optional<ButtonType> chosen = alert.showAndWait();
+        if (chosen.isEmpty() || chosen.get() == cancel) return;
+        if (chosen.get() == external) openLocalInExternalEditor(path);
+        else openLocalInBuiltinEditor(path);
+    }
+
+    private void openLocalInBuiltinEditor(Path path) {
+        String title = I18n.tr("editor.title", path.getFileName() == null ? path.toString() : path.getFileName().toString());
+        final String session = currentTabId;
+        com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance().getNavigationManager()
+                .openInNewWindow("editor-window.fxml", title, "editor-window.fxml:local", controller -> {
+                    if (controller instanceof com.runzhi.aishell.editor.EditorWindowController editor) {
+                        if (session != null) {
+                            editor.setOpenInTerminalHandler(directory -> openTerminalDirectory(session, directory));
+                        }
+                        editor.openLocal(path.toString());
+                    }
+                });
+    }
+
+    private void openLocalInExternalEditor(Path path) {
+        try {
+            com.runzhi.aishell.editor.ExternalEditorService.openLocalFile(path);
+        } catch (Exception failure) {
+            log.error("Failed to start external editor for {}", path, failure);
+            showErrorAlert(I18n.tr("editor.external.notFound") + ": " + failure.getMessage());
+        }
+    }
+
+    /** 用二级菜单中指定的编辑器打开本地文件（本地文件就地保存，无需回传）。 */
+    private void launchLocalExternal(Path path, com.runzhi.aishell.editor.ExternalEditor editor) {
+        try {
+            com.runzhi.aishell.editor.ExternalEditorService.openLocalFile(path, editor);
+        } catch (Exception failure) {
+            log.error("Failed to start external editor for {}", path, failure);
+            showErrorAlert(I18n.tr("editor.external.notFound") + ": " + failure.getMessage());
+        }
+    }
+
+    private void openLocalWithSystemDefault(Path path) {
+        try {
+            java.awt.Desktop.getDesktop().open(path.toFile());
+        } catch (java.io.IOException failure) {
+            log.error("Failed to open {} with system default", path, failure);
+            showErrorAlert(I18n.tr("editor.open.failed") + ": " + failure.getMessage());
+        }
+    }
+
+    /** 编辑器工具栏「在终端打开所在目录」：回到对应终端执行 cd。 */
+    private void openTerminalDirectory(String session, String directory) {
+        try {
+            var moduleManager = com.runzhi.aishell.common.ai.AIShellModuleManager.getInstance();
+            var tabService = moduleManager.getTerminalTabService();
+            var commandService = moduleManager.getTerminalCommandService();
+            if (tabService == null || commandService == null) return;
+            javafx.scene.control.Tab target = null;
+            for (var tab : List.copyOf(tabService.getTabToOutput().keySet())) {
+                if (session.equals(tabService.getTabId(tab))) {
+                    target = tab;
+                    break;
+                }
+            }
+            if (target != null) commandService.executeCommandInTab(target, "cd " + quoteShellArg(directory));
+        } catch (Exception failure) {
+            log.warn("openTerminalDirectory failed for {}", directory, failure);
+        }
+    }
+
+    private static String quoteShellArg(String value) {
+        if (value == null || value.isEmpty()) return "";
+        if (value.matches("[A-Za-z0-9@%_+=:,./-]+")) return value;
+        return "'" + value.replace("'", "'\''") + "'";
+    }
+
+    private static String endpointDisplay(com.runzhi.aishell.ssh.SSHService service, String session) {
+        try {
+            String user = service.getUsernameForTab(session);
+            String host = service.getHostForTab(session);
+            if (user != null && host != null) return user + "@" + host;
+        } catch (Exception ignored) {
+            // 展示信息失败回退 tabId
+        }
+        return session == null ? "" : session;
     }
 
     private void refreshTargetDisplay() {
@@ -1721,5 +2198,16 @@ public class FileManagerPanelController extends BaseController implements Initia
         transferExecutor.shutdownNow();
         activeTransferControl = null;
         activeTransferTask = null;
+        closeExternalEditorServices();
+    }
+
+    /** 关闭由本面板发起的外部编辑会话并删除临时文件。 */
+    private void closeExternalEditorServices() {
+        synchronized (externalServices) {
+            for (var service : java.util.List.copyOf(externalServices)) {
+                try { service.close(); } catch (Exception ignored) { }
+            }
+            externalServices.clear();
+        }
     }
 }

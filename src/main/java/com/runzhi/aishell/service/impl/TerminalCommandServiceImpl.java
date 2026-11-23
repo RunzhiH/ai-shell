@@ -7,11 +7,11 @@ package com.runzhi.aishell.service.impl;
 
 import com.runzhi.aishell.ai.processor.AICommandProcessor;
 import com.runzhi.aishell.agent.AgentActivityBus;
+import com.runzhi.aishell.agent.AgentAutoApprovePolicy;
 import com.runzhi.aishell.agent.AgentDecision;
 import com.runzhi.aishell.agent.AgentSandboxPolicy;
 import com.runzhi.aishell.agent.CommandRisk;
 import com.runzhi.aishell.agent.CommandRiskAssessor;
-import com.runzhi.aishell.agent.ReadOnlyCommandWhitelist;
 import com.runzhi.aishell.common.ai.AIShellModuleManager;
 import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.common.terminal.ShellCommandSimulator;
@@ -316,17 +316,18 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
         com.runzhi.aishell.agent.AgentAuditLogger audit =
                 com.runzhi.aishell.agent.AgentAuditLogger.getInstance();
         audit.record("command_proposed", tabId, risk, command, "pending");
-        writeAIFeedback(tab, "[AI] 待执行命令（" + risk.label() + "）：" + command + "\n[AI] 等待用户确认...");
-        if (risk == CommandRisk.LOW
-                && ReadOnlyCommandWhitelist.isReadOnly(command)
-                && Boolean.TRUE.equals(tab.getProperties().get("agentAutoApproveLowRisk"))) {
+        // 用 Tab 上的运行期开关同步会话策略，保证命令提案与 Agent 工具调用共用同一判定。
+        AgentAutoApprovePolicy.setEnabled(tabId,
+                Boolean.TRUE.equals(tab.getProperties().get(AgentAutoApprovePolicy.TAB_PROPERTY)));
+        if (AgentAutoApprovePolicy.canAutoApproveCommand(tabId, risk, command)) {
             publish(tab, AgentActivityBus.Kind.PROPOSAL, "[" + risk.label() + "] " + command);
             audit.record("command_auto_approved", tabId, risk, command, "approved");
-            publish(tab, AgentActivityBus.Kind.EXECUTION, "低风险命令已自动批准：" + command);
-            writeAIFeedback(tab, "[AI] 低风险命令已自动批准，正在执行...");
+            publish(tab, AgentActivityBus.Kind.EXECUTION, "自动批准（" + risk.label() + "）：" + command);
+            writeAIFeedback(tab, "[AI] 已自动批准（" + risk.label() + "），正在执行...");
             executeAgentStep(tab, task, command);
             return;
         }
+        writeAIFeedback(tab, "[AI] 待执行命令（" + risk.label() + "）：" + command + "\n[AI] 等待用户确认...");
         java.util.concurrent.atomic.AtomicBoolean decided = new java.util.concurrent.atomic.AtomicBoolean();
         SSHService approvalSsh = getSSHService();
         var originalConnection = approvalSsh == null ? null : approvalSsh.getTabConnection(tabId);
@@ -377,6 +378,8 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
             com.runzhi.aishell.terminal.InteractiveTerminalView.writeAgentExecutionOutput(tab, safeOutput);
             publish(tab, AgentActivityBus.Kind.TOOL, "步骤 " + task.commands + " 执行结果：\n" + safeOutput);
             appendExecutionContext(task, command, true, safeOutput);
+            // 步骤结束后把终端输入区还给用户：移除残留审批面板并聚焦命令输入框
+            com.runzhi.aishell.terminal.InteractiveTerminalView.restoreTerminalInput(tab);
             requestNextAgentStep(tab, task);
         }, error -> {
             activeAIRequests.remove(tab);
@@ -384,6 +387,7 @@ public class TerminalCommandServiceImpl implements TerminalCommandService {
             String message = error == null ? "未知执行错误" : error;
             publish(tab, AgentActivityBus.Kind.TOOL, "步骤 " + task.commands + " 执行失败：" + message);
             appendExecutionContext(task, command, false, message);
+            com.runzhi.aishell.terminal.InteractiveTerminalView.restoreTerminalInput(tab);
             requestNextAgentStep(tab, task);
         });
         activeAIRequests.put(tab, request);

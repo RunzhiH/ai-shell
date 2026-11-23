@@ -89,6 +89,13 @@ public interface SSHService {
 
     void writeTextFileForTab(String tabId, String path, String content) throws Exception;
 
+    /** 编辑器字节级接口：stat / 读 / 写（带 mtime 冲突校验）。 */
+    FileTransferService.RemoteFileStat statForTab(String tabId, String path) throws Exception;
+
+    byte[] readBytesForTab(String tabId, String path, int maxBytes) throws Exception;
+
+    void writeBytesForTab(String tabId, String path, byte[] data, long expectedMtime) throws Exception;
+
     void renamePathForTab(String tabId, String from, String to) throws Exception;
 
     /**

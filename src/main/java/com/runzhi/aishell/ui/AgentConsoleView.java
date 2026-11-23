@@ -8,7 +8,9 @@ package com.runzhi.aishell.ui;
 import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.common.util.ClipboardUtils;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
@@ -23,12 +25,17 @@ import javafx.scene.control.TitledPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Path;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+import javafx.scene.text.HitInfo;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -65,8 +72,13 @@ public final class AgentConsoleView extends BorderPane {
 
     private static final Pattern ANSI = Pattern.compile("\\u001B\\[[;?0-9]*[ -/]*[@-~]");
     private static final String MONO = "-fx-font-family: 'Cascadia Code', 'Consolas', monospace;";
+    /** 距底部小于约一个消息卡高度时视为“在底部”，继续跟随新消息。 */
+    private static final double NEAR_BOTTOM_THRESHOLD = 96;
     private static final String WELCOME_MARKER = "agentWelcome";
-    private final VBox transcript = new VBox(8);
+    // 消息卡之间的行间距：拉开距离便于区分不同来源的输出
+    private final VBox transcript = new VBox(12);
+    /** 当前拖选生效的消息（Ctrl+C 与右键复制的来源）；null 表示无选区。 */
+    private MessageSelection activeSelection;
     private final ScrollPane scroll = new ScrollPane(transcript);
     private final TextArea input = new TextArea();
     private final ListView<String> suggestions = new ListView<>();
@@ -74,6 +86,8 @@ public final class AgentConsoleView extends BorderPane {
     private final Label taskLabel = new Label();
     private final Button historyButton = new Button(I18n.tr("agent.history.button"));
     private Runnable historyAction = () -> { };
+    /** 「粘贴到终端执行」按钮的回调：把指令写入当前会话终端并执行（GitHub #11）。 */
+    private Consumer<String> commandRunner = ignored -> { };
     private final ComboBox<AiProfile> aiSelector = new ComboBox<>();
     private boolean updatingAiProfiles;
     private Consumer<String> aiSelectionHandler = ignored -> { };
@@ -220,6 +234,16 @@ public final class AgentConsoleView extends BorderPane {
 
         input.textProperty().addListener((ignored, oldValue, value) -> updateSuggestions(value));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKey);
+        // 转录区有拖选选区时，Ctrl+C（macOS Cmd+C）复制选区；否则交给输入框等默认行为。
+        addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.isShortcutDown() && event.getCode() == KeyCode.C) {
+                MessageSelection selection = activeSelection;
+                if (selection != null && selection.hasRange()) {
+                    copySelection(selection);
+                    event.consume();
+                }
+            }
+        });
     }
 
     private void handleKey(KeyEvent event) {
@@ -265,6 +289,8 @@ public final class AgentConsoleView extends BorderPane {
         input.clear();
         showSuggestions(false);
         printUser(value);
+        // 用户主动发送：无论之前滚到哪，都拉回最底部，便于紧跟 AI 的后续输出
+        jumpToBottom();
         lineHandler.accept(value);
     }
 
@@ -381,8 +407,6 @@ public final class AgentConsoleView extends BorderPane {
         String normalized = normalize(text);
         if (normalized.isBlank()) return;
         removeWelcome();
-        boolean follow = isNearBottom();
-        double followValue = scroll.getVvalue();
         Label roleLabel = new Label(I18n.tr("agent.role.error"));
         roleLabel.getStyleClass().addAll("agent-message-role", "agent-role-error");
         roleLabel.setMaxWidth(Double.MAX_VALUE);
@@ -394,7 +418,7 @@ public final class AgentConsoleView extends BorderPane {
                 ClipboardUtils.copyText(normalized) ? "agent.copied" : "agent.copyFailed")));
         HBox header = new HBox(6, roleLabel, copy);
         header.setAlignment(Pos.CENTER_LEFT);
-        TextFlow body = textFlow(normalized, false, Role.ERROR);
+        StackPane body = selectableTextFlow(normalized, false, Role.ERROR);
         Button retryButton = new Button(I18n.tr("agent.error.retry"));
         retryButton.getStyleClass().add("ai-command-btn");
         retryButton.setOnAction(event -> { retryButton.setDisable(true); retry.run(); });
@@ -412,7 +436,8 @@ public final class AgentConsoleView extends BorderPane {
         card.setMaxWidth(Double.MAX_VALUE);
         card.getStyleClass().addAll("agent-message", "agent-message-error");
         transcript.getChildren().add(card);
-        scrollIfFollow(follow, followValue);
+        // 可恢复错误带操作按钮：必须让用户看到，无条件拉回底部
+        javafx.application.Platform.runLater(this::jumpToBottom);
     }
 
     public void printSuccess(String text) {
@@ -430,7 +455,7 @@ public final class AgentConsoleView extends BorderPane {
         if (text.isBlank()) return;
         removeWelcome();
         boolean follow = isNearBottom();
-        double followValue = scroll.getVvalue();
+        double followValue = pixelOffset();
         String roleClass = role.name().toLowerCase(Locale.ROOT);
 
         VBox block = new VBox(4);
@@ -454,7 +479,7 @@ public final class AgentConsoleView extends BorderPane {
         body.setMinWidth(0);
         String copyText = text;
         if (role == Role.QUESTION) {
-            body.getChildren().add(textFlow(text, false, role));
+            body.getChildren().add(selectableTextFlow(text, false, role));
             List<String> renderedOptions = new ArrayList<>();
             if (options != null) {
                 for (String option : options) {
@@ -481,38 +506,208 @@ public final class AgentConsoleView extends BorderPane {
         } else if (role == Role.THINK || role == Role.TOOL) {
             appendTechnicalBody(body, text, role);
         } else {
-            body.getChildren().add(textFlow(text, false, role));
+            body.getChildren().add(selectableTextFlow(text, false, role));
         }
         final String copyValue = copyText;
         copy.setOnAction(event -> copyMessage(copyValue));
         block.getChildren().addAll(header, body);
+        // 指令类回复：附「粘贴到终端执行」按钮，一键把命令送进当前会话终端（GitHub #11）
+        if (role == Role.ASSISTANT && looksLikeCommand(text)) {
+            Button runInTerminal = new Button(I18n.tr("agent.reply.runInTerminal"));
+            runInTerminal.setFocusTraversable(false);
+            runInTerminal.getStyleClass().add("ai-command-btn");
+            runInTerminal.setTooltip(new Tooltip(I18n.tr("agent.reply.runInTerminal.tip")));
+            final String command = text;
+            runInTerminal.setOnAction(event -> commandRunner.accept(command));
+            HBox replyActions = new HBox(6, runInTerminal);
+            block.getChildren().add(replyActions);
+        }
         transcript.getChildren().add(block);
         scrollIfFollow(follow, followValue);
     }
 
-    private TextFlow textFlow(String text, boolean code, Role role) {
+    /**
+     * 判断回复正文是否像一条单行 Shell 指令：单行、无中文、无句末标点、
+     * 首词为命令式 token（字母数字下划线连字符，可带参数）。
+     */
+    public static boolean looksLikeCommand(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 200 || trimmed.contains("\n")) {
+            return false;
+        }
+        if (trimmed.codePoints().anyMatch(ch -> ch >= 0x3000 && ch <= 0x9FFF)) {
+            return false;   // 含 CJK（含中文标点），按说明文字处理
+        }
+        for (char ending : new char[]{'.', '?', '!', '。', '？', '！'}) {
+            if (trimmed.charAt(trimmed.length() - 1) == ending) {
+                return false;   // 句末标点按自然语言处理
+            }
+        }
+        return trimmed.matches("^[A-Za-z][A-Za-z0-9_@%:./-]*(\\s+\\S.*)?$");
+    }
+
+    /** TextFlow 与其唯一文本节点，供选择逻辑定位字符偏移。 */
+    private record FlowText(TextFlow flow, Text text) { }
+
+    private FlowText textFlow(String text, boolean code, Role role) {
         TextFlow flow = new TextFlow();
-        flow.setLineSpacing(2);
+        // 行内行间距加大，长文本更易读
+        flow.setLineSpacing(5);
         flow.setMinWidth(0);
         flow.setMaxWidth(Double.MAX_VALUE);
         Text node = new Text(text);
         node.getStyleClass().add(code ? "agent-message-code" : "agent-message-text");
         node.getStyleClass().add("agent-message-text-" + role.name().toLowerCase(Locale.ROOT));
         flow.getChildren().add(node);
-        return flow;
+        return new FlowText(flow, node);
+    }
+
+    /**
+     * 消息正文：TextFlow 保持原有呈现，外层 StackPane 叠加选区高亮层，
+     * 支持鼠标拖选、Ctrl+C（macOS Cmd+C）与右键复制片段。
+     */
+    private StackPane selectableTextFlow(FlowText body) {
+        StackPane box = new StackPane();
+        box.getStyleClass().add("agent-message-flow");
+        Path highlight = new Path();
+        highlight.getStyleClass().add("agent-selection-highlight");
+        highlight.setManaged(false);
+        highlight.setVisible(false);
+        box.getChildren().addAll(highlight, body.flow());
+        installSelection(new MessageSelection(body, highlight));
+        return box;
+    }
+
+    private StackPane selectableTextFlow(String text, boolean code, Role role) {
+        return selectableTextFlow(textFlow(text, code, role));
+    }
+
+    /** 一条消息的拖选状态：anchor/caret 为字符偏移，anchor == caret 表示无选区。 */
+    private static final class MessageSelection {
+        final TextFlow flow;
+        final Text text;
+        final Path highlight;
+        int anchor = -1;
+        int caret = -1;
+        boolean dragging;
+        MessageSelection(FlowText body, Path highlight) {
+            this.flow = body.flow();
+            this.text = body.text();
+            this.highlight = highlight;
+        }
+        boolean hasRange() { return anchor >= 0 && caret >= 0 && anchor != caret; }
+        int from() { return Math.min(anchor, caret); }
+        int to() { return Math.max(anchor, caret); }
+        String selectedText() {
+            String value = text.getText();
+            return value.substring(Math.max(0, from()), Math.min(value.length(), to()));
+        }
+    }
+
+    private void installSelection(MessageSelection selection) {
+        TextFlow flow = selection.flow;
+        flow.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+            if (event.getButton() != MouseButton.PRIMARY) return;
+            clearActiveSelection();
+            int end = selection.text.getText().length();
+            HitInfo hit = hitSelectionPoint(selection.flow, event);
+            selection.anchor = hit == null ? 0 : Math.min(hit.getInsertionIndex(), end);
+            selection.caret = selection.anchor;
+            selection.dragging = true;
+            refreshHighlight(selection);
+            event.consume();
+        });
+        flow.addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> {
+            if (!selection.dragging) return;
+            int end = selection.text.getText().length();
+            HitInfo hit = hitSelectionPoint(selection.flow, event);
+            selection.caret = hit == null ? end : Math.min(hit.getInsertionIndex(), end);
+            refreshHighlight(selection);
+            event.consume();
+        });
+        flow.addEventFilter(MouseEvent.MOUSE_RELEASED, event -> {
+            if (!selection.dragging) return;
+            selection.dragging = false;
+            if (selection.hasRange()) activeSelection = selection;
+            else clearActiveSelection();
+            event.consume();
+        });
+        flow.setOnContextMenuRequested(event -> {
+            MenuItem copy = new MenuItem(I18n.tr("agent.copy"));
+            copy.setDisable(!selection.hasRange());
+            copy.setOnAction(action -> copySelection(selection));
+            ContextMenu menu = new ContextMenu(copy);
+            menu.show(flow, event.getScreenX(), event.getScreenY());
+            event.consume();
+        });
+        // 高亮层坐标跟随 TextFlow 在 StackPane 内的实际位置（fixed: unmanaged 节点不参与布局）。
+        selection.highlight.layoutXProperty().bind(flow.layoutXProperty());
+        selection.highlight.layoutYProperty().bind(flow.layoutYProperty());
+    }
+
+    /** 事件坐标转 TextFlow 本地坐标；flow 未挂 Scene 时回退到事件本地坐标。 */
+    private HitInfo hitSelectionPoint(TextFlow flow, MouseEvent event) {
+        Point2D point = null;
+        if (flow.getScene() != null) point = flow.screenToLocal(event.getScreenX(), event.getScreenY());
+        if (point == null) point = new Point2D(event.getX(), event.getY());
+        try { return flow.hitTest(point); }
+        catch (RuntimeException ignored) { return null; }
+    }
+
+    private void clearActiveSelection() {
+        MessageSelection previous = activeSelection;
+        activeSelection = null;
+        if (previous != null) {
+            previous.anchor = -1;
+            previous.caret = -1;
+            refreshHighlight(previous);
+        }
+    }
+
+    private void refreshHighlight(MessageSelection selection) {
+        Path highlight = selection.highlight;
+        if (highlight == null) return;
+        if (!selection.hasRange()) {
+            highlight.getElements().clear();
+            highlight.setVisible(false);
+            return;
+        }
+        String value = selection.text.getText();
+        int from = Math.max(0, selection.from());
+        int to = Math.min(value.length(), selection.to());
+        if (from >= to) {
+            highlight.getElements().clear();
+            highlight.setVisible(false);
+            return;
+        }
+        highlight.getElements().setAll(selection.flow.rangeShape(from, to));
+        highlight.setVisible(true);
+    }
+
+    private void copySelection(MessageSelection selection) {
+        if (selection == null || !selection.hasRange()) return;
+        setStatus(I18n.tr(ClipboardUtils.copyText(selection.selectedText()) ? "agent.copied" : "agent.copyFailed"));
+    }
+
+    /** 当前拖选的消息文本（无选区返回 null）；供测试与辅助功能验证。 */
+    public String getSelectedMessageText() {
+        return activeSelection != null && activeSelection.hasRange() ? activeSelection.selectedText() : null;
     }
 
     private void appendTechnicalBody(VBox body, String text, Role role) {
-        TextFlow flow = textFlow(text, true, role);
+        FlowText rendered = textFlow(text, true, role);
         if (text.length() > 240 || text.lines().count() > 4) {
-            TitledPane details = new TitledPane(I18n.tr("agent.message.details"), flow);
+            TitledPane details = new TitledPane(I18n.tr("agent.message.details"), selectableTextFlow(rendered));
             details.setAnimated(false);
             details.setExpanded(false);
             details.setMaxWidth(Double.MAX_VALUE);
             details.getStyleClass().add("agent-message-details");
             body.getChildren().add(details);
         } else {
-            body.getChildren().add(flow);
+            body.getChildren().add(selectableTextFlow(rendered));
         }
     }
 
@@ -535,15 +730,45 @@ public final class AgentConsoleView extends BorderPane {
         double content = transcript.getLayoutBounds().getHeight();
         if (viewport <= 0 || content <= viewport) return true;
         double offset = scroll.getVvalue() * (content - viewport);
-        return content - viewport - offset <= 36;
+        // 阈值取约一个消息卡的高度：内容刚超出视口、用户尚无处可滚时
+        // vvalue 仍会被钳制为 0，窄阈值会把这种过渡态误判为“用户在顶部”而中断跟随。
+        return content - viewport - offset <= NEAR_BOTTOM_THRESHOLD;
     }
 
-    private void scrollIfFollow(boolean follow, double capturedValue) {
+    private void scrollIfFollow(boolean follow, double capturedOffsetPixels) {
         if (!follow) return;
         javafx.application.Platform.runLater(() -> {
-            // A queued scroll must not override a user who scrolled up after the append.
-            if (scroll.getVvalue() + 0.0005 >= capturedValue) scroll.setVvalue(1.0);
+            // 像素锚定：内容增长时视口停留在原内容像素位置，vvalue 分数随之下降，
+            // 但用户并未滚动；只有像素偏移相对追加前变小才是用户主动上滚。
+            double currentOffset = pixelOffset();
+            if (currentOffset + 2 < capturedOffsetPixels) return;   // 用户已上滚 → 不覆盖
+            // vvalue=1.0 只有在内容布局完成、滚动范围确定之后才对应底部：
+            // 新内容挂载后范围仍是旧值，提前设置会被锚定抹掉，表现为停在半路。
+            // 因此先同步应用样式与布局，再定位，确保落在最底部。
+            scroll.applyCss();
+            scroll.layout();
+            scroll.setVvalue(1.0);
         });
+    }
+
+    /** 视口顶端在内容中的像素位置（范围 0 时为 0）；用于区分像素锚定与用户滚动。 */
+    private double pixelOffset() {
+        double content = transcript.getLayoutBounds().getHeight();
+        double viewport = scroll.getViewportBounds().getHeight();
+        if (content <= viewport) return 0;
+        return scroll.getVvalue() * (content - viewport);
+    }
+
+    /**
+     * 强制定位到转录区最底部。
+     * <p>
+     * 用户发送消息、出现待审批卡片或可重试错误等「必须看到最新内容」的场景使用：
+     * 不受 isNearBottom 约束，避免用户上滚阅读历史时错过审批与后续输出。
+     */
+    public void jumpToBottom() {
+        scroll.applyCss();
+        scroll.layout();
+        scroll.setVvalue(1.0);
     }
 
     /** Renders a proposed shell command with copy and explicit approval actions. */
@@ -577,7 +802,7 @@ public final class AgentConsoleView extends BorderPane {
         Button approve = new Button(I18n.tr("agent.execute"));
         approve.getStyleClass().add("ai-command-btn");
         Button reject = new Button(I18n.tr("agent.reject"));
-        reject.getStyleClass().add("ai-command-btn-danger");
+        reject.getStyleClass().addAll("ai-command-btn", "agent-reject-button");
         Consumer<Boolean> decideOnce = approved -> {
             approve.setDisable(true);
             reject.setDisable(true);
@@ -599,7 +824,17 @@ public final class AgentConsoleView extends BorderPane {
             if(confirmed) decideOnce.accept(true);
         });
         reject.setOnAction(event -> decideOnce.accept(false));
-        javafx.scene.layout.FlowPane actions = new javafx.scene.layout.FlowPane(6, 6, copy, send, approve, reject);
+        reject.setTooltip(new Tooltip(I18n.tr("agent.reject.tooltip")));
+        // 拒绝靠右并红色醒目：主操作单独一排（窄宽可换行不截断），拒绝独占下一排并推到最右；
+        // 与执行行拉开 10px 竖直间距，避免点执行时误中拒绝（GitHub #5）。
+        javafx.scene.layout.FlowPane primary = new javafx.scene.layout.FlowPane(6, 6, copy, send, approve);
+        primary.setMaxWidth(Double.MAX_VALUE);
+        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox rejectRow = new HBox(6, spacer, reject);
+        rejectRow.setAlignment(Pos.CENTER_LEFT);
+        rejectRow.setMaxWidth(Double.MAX_VALUE);
+        VBox actions = new VBox(10, primary, rejectRow);
         VBox card = new VBox(7, heading, code, actions);
         if(proposal!=null) {
             var context=proposal.context();
@@ -609,7 +844,8 @@ public final class AgentConsoleView extends BorderPane {
             Label state=new Label(); state.setWrapText(true); state.setMinWidth(0);
             Label safety=new Label(I18n.tr("agent.highWarning")); safety.setWrapText(true); safety.setMinWidth(0);
             Button restartButton=new Button(); restartButton.getStyleClass().add("ai-command-btn");
-            restartButton.setOnAction(e->restart.run()); actions.getChildren().add(restartButton);
+            restartButton.setOnAction(e->restart.run());
+            ((javafx.scene.layout.FlowPane) actions.getChildren().get(0)).getChildren().add(restartButton);
             Runnable refresh=()->{
                 var current=proposal.state();
                 boolean pending=current==com.runzhi.aishell.agent.AgentProposal.State.PENDING;
@@ -633,11 +869,10 @@ public final class AgentConsoleView extends BorderPane {
         card.setMinWidth(0);
         card.getStyleClass().add("ai-command-card");
         removeWelcome();
-        boolean follow = isNearBottom();
-        double followValue = scroll.getVvalue();
         transcript.getChildren().add(card);
         updateApprovalNavigation();
-        scrollIfFollow(follow, followValue);
+        // 待审批卡片阻塞任务：无论用户当前滚到哪，都拉回底部展示
+        javafx.application.Platform.runLater(this::jumpToBottom);
     }
 
     /** Locate a pending card even after its target's transcript is rendered again. */
@@ -692,6 +927,11 @@ public final class AgentConsoleView extends BorderPane {
     }
 
     /** 打开当前连接的会话历史。 */
+    /** 设置「粘贴到终端执行」回调：null 或不设置时指令类回复不提供该按钮以外的行为。 */
+    public void setCommandRunner(Consumer<String> runner) {
+        this.commandRunner = runner == null ? ignored -> { } : runner;
+    }
+
     public void setHistoryAction(Runnable action) {
         historyAction = action == null ? () -> { } : action;
     }

@@ -426,6 +426,21 @@ public class SSHServiceImpl implements SSHService {
     }
 
     @Override
+    public FileTransferService.RemoteFileStat statForTab(String tabId, String path) throws Exception {
+        return requireFileTransferService(tabId).stat(path);
+    }
+
+    @Override
+    public byte[] readBytesForTab(String tabId, String path, int maxBytes) throws Exception {
+        return requireFileTransferService(tabId).readBytes(path, maxBytes);
+    }
+
+    @Override
+    public void writeBytesForTab(String tabId, String path, byte[] data, long expectedMtime) throws Exception {
+        requireFileTransferService(tabId).writeBytes(path, data, expectedMtime);
+    }
+
+    @Override
     public void renamePathForTab(String tabId, String from, String to) throws Exception {
         requireFileTransferService(tabId).rename(from, to);
     }

@@ -30,6 +30,7 @@ public class SystemMetrics {
     private double cpuHardwareInterrupt; // 硬件中断CPU使用率
     private double cpuSoftwareInterrupt; // 软件中断CPU使用率
     private double cpuSteal;       // 虚拟化窃取CPU使用率
+    private double cpuTotalUsed;   // CPU总使用率（单核口径，等于 100-idle）
     private long totalMemory;      // 总内存(KiB)
     private long freeMemory;       // 空闲内存(KiB)
     private long usedMemory;       // 已用内存(KiB)

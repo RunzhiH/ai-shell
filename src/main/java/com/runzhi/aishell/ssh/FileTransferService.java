@@ -393,6 +393,128 @@ public class FileTransferService {
         }
     }
 
+    /**
+     * 远端文件状态：大小、修改时间（秒）、权限、类型。
+     * 供编辑器做冲突检测与打开前判断，避免上层依赖 JSch 类型。
+     */
+    public record RemoteFileStat(long size, long mtimeSeconds, int permissions,
+                                  boolean directory, boolean symlink) {
+        /** 是否可写（按 owner/group/other 任一写位判断，实际权限以服务器为准）。 */
+        public boolean writable() {
+            return (permissions & 0222) != 0;
+        }
+    }
+
+    /**
+     * 保存时远端文件已被修改（mtime 与打开时记录的不一致），上层应弹冲突对话框，
+     * 绝不静默覆盖。
+     */
+    public static class RemoteFileChangedException extends java.io.IOException {
+        private final long expectedMtime;
+        private final long actualMtime;
+
+        public RemoteFileChangedException(long expectedMtime, long actualMtime) {
+            super("Remote file changed: expected mtime " + expectedMtime + ", actual " + actualMtime);
+            this.expectedMtime = expectedMtime;
+            this.actualMtime = actualMtime;
+        }
+
+        public long getExpectedMtime() { return expectedMtime; }
+        public long getActualMtime() { return actualMtime; }
+    }
+
+    private static final int STAT_READ_LIMIT_CAP = 512 * 1024 * 1024;
+
+    /** 远端文件 stat：大小、mtime（秒）、权限、目录与符号链接标记。 */
+    public RemoteFileStat stat(String remotePath) throws JSchException, SftpException {
+        if (remotePath == null || remotePath.isBlank() || remotePath.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("A valid remote path is required");
+        }
+        synchronized (channelLock) {
+            connect();
+            SftpATTRS attributes = sftpChannel.lstat(remotePath);
+            return new RemoteFileStat(
+                    attributes.getSize(),
+                    attributes.getMTime(),
+                    attributes.getPermissions(),
+                    attributes.isDir(),
+                    attributes.isLink());
+        }
+    }
+
+    /** 读取远端文件字节：stat 校验后按 maxBytes 分块累计，超限立即中止，避免大文件占满内存。 */
+    public byte[] readBytes(String remotePath, int maxBytes)
+            throws JSchException, SftpException, java.io.IOException {
+        if (remotePath == null || remotePath.isBlank() || remotePath.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("A valid remote path is required");
+        }
+        if (maxBytes < 1 || maxBytes > STAT_READ_LIMIT_CAP) {
+            throw new IllegalArgumentException("Invalid remote read limit");
+        }
+        synchronized (channelLock) {
+            connect();
+            SftpATTRS attributes = sftpChannel.lstat(remotePath);
+            if (attributes.isDir()) throw new IllegalArgumentException("Remote path is a directory");
+            if (attributes.getSize() > maxBytes) throw new IllegalArgumentException("Remote file exceeds the read limit");
+            try (InputStream input = sftpChannel.get(remotePath);
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int total = 0;
+                int read;
+                while ((read = input.read(buffer)) >= 0) {
+                    total += read;
+                    if (total > maxBytes) throw new IllegalArgumentException("Remote file exceeds the read limit");
+                    output.write(buffer, 0, read);
+                }
+                return output.toByteArray();
+            }
+        }
+    }
+
+    /**
+     * 写入远端文件字节：先 lstat 校验 expectedMtimeSeconds（0 表示不校验），
+     * 再 put 覆盖；不做「先删后写」，避免权限/属主丢失，写入后按原权限 chmod 恢复。
+     */
+    public void writeBytes(String remotePath, byte[] content, long expectedMtimeSeconds)
+            throws JSchException, SftpException, java.io.IOException, RemoteFileChangedException {
+        if (remotePath == null || remotePath.isBlank() || remotePath.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("A valid remote path is required");
+        }
+        if (content == null) throw new IllegalArgumentException("Content must not be null");
+        synchronized (channelLock) {
+            connect();
+            int originalPermissions = -1;
+            if (expectedMtimeSeconds > 0) {
+                SftpATTRS before = sftpChannel.lstat(remotePath);
+                if (before.getMTime() != expectedMtimeSeconds) {
+                    throw new RemoteFileChangedException(expectedMtimeSeconds, before.getMTime());
+                }
+                originalPermissions = before.getPermissions();
+            } else {
+                try {
+                    originalPermissions = sftpChannel.lstat(remotePath).getPermissions();
+                } catch (SftpException ignored) {
+                    originalPermissions = -1; // 新建文件无需恢复权限
+                }
+            }
+            try (InputStream input = new java.io.ByteArrayInputStream(content)) {
+                sftpChannel.put(input, remotePath);
+            }
+            // put 覆盖通常保留原权限，个别服务器会回退到默认 umask，按原权限恢复（可选，失败不阻断）
+            if (originalPermissions > 0) {
+                try {
+                    SftpATTRS after = sftpChannel.lstat(remotePath);
+                    if (after.getPermissions() != originalPermissions) {
+                        sftpChannel.chmod(originalPermissions, remotePath);
+                    }
+                } catch (SftpException restoreFailure) {
+                    log.warn("Failed to restore permissions on {}: {}", remotePath, restoreFailure.getMessage());
+                }
+            }
+            log.info("Remote file saved: {} ({} bytes)", remotePath, content.length);
+        }
+    }
+
     public enum OverwritePolicy { OVERWRITE, SKIP, RESUME }
 
     public static final class TransferControl {

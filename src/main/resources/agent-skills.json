@@ -1,0 +1,88 @@
+{
+  "skills": [
+    {
+      "name": "resource-check",
+      "os": "linux",
+      "description": "系统资源巡检：CPU/内存/磁盘/IO 与高占用进程",
+      "prompt": "检查这台 Linux 服务器的整体资源状态：CPU 负载与占用最高的进程、内存与 swap 使用、各挂载点磁盘空间与 IO 等待，逐项指出异常并给出处理建议。"
+    },
+    {
+      "name": "disk-usage",
+      "os": "linux",
+      "description": "分析磁盘占用最大的目录与文件",
+      "prompt": "分析这台 Linux 服务器的磁盘占用：找出根分区以及 /var、/home、/tmp、/var/log 等主要目录中占空间最大的前 10 项，说明哪些可以安全清理并给出建议命令（仅列出，不执行）。"
+    },
+    {
+      "name": "network-troubleshoot",
+      "os": "linux",
+      "description": "排查网络：监听端口、DNS 与连通性",
+      "prompt": "排查这台 Linux 服务器的网络：检查监听端口与 established 连接、测试 DNS 解析与默认网关/外网连通性、查看防火墙规则摘要，定位可能的异常并给出结论。"
+    },
+    {
+      "name": "service-status",
+      "os": "linux",
+      "description": "巡检 systemd 服务与常见中间件状态",
+      "prompt": "巡检这台 Linux 服务器的服务：列出 failed 的 systemd 单元，并检查常见的 Web/数据库/容器服务（如 nginx、mysql、docker，存在才检查）的运行状态，对失败服务给出恢复建议。"
+    },
+    {
+      "name": "log-analysis",
+      "os": "linux",
+      "description": "分析最近的系统日志错误与警告",
+      "prompt": "分析这台 Linux 服务器最近的系统日志：读取 journalctl 最近的错误与警告（或 /var/log/syslog、/var/log/messages、相关应用日志），归纳主要问题与可能原因。"
+    },
+    {
+      "name": "security-audit",
+      "os": "linux",
+      "description": "基础安全审计：登录记录、端口与 SSH 配置",
+      "prompt": "对这台 Linux 服务器做一次基础安全审计：检查最近的登录与失败登录记录、sudo 使用记录、对外监听端口、SSH 配置（是否允许密码/根登录等），指出需要加固的点并按风险排序。"
+    },
+    {
+      "name": "docker-check",
+      "os": "linux",
+      "description": "Docker 容器状态、资源与日志巡检",
+      "prompt": "巡检这台 Linux 服务器上的 Docker：列出容器与其状态、资源占用，检查异常退出容器的最近日志，给出处理建议（不要随意重启容器）。"
+    },
+    {
+      "name": "brew-update",
+      "os": "macos",
+      "description": "检查 Homebrew 可更新的软件包",
+      "prompt": "使用 Homebrew 检查这台 macOS 可更新的软件包：先 brew update 再 brew outdated，按重要程度列出待更新项并给出升级建议命令（仅列出，不执行）。"
+    },
+    {
+      "name": "mac-resource",
+      "os": "macos",
+      "description": "macOS 资源状态：内存、磁盘与高占用进程",
+      "prompt": "检查这台 macOS 服务器的资源状态：内存与交换空间、各卷磁盘空间、占用 CPU/内存最高的进程，逐项指出异常并给出处理建议。"
+    },
+    {
+      "name": "mac-network",
+      "os": "macos",
+      "description": "macOS 网络排查：端口、DNS 与防火墙",
+      "prompt": "排查这台 macOS 的网络：用 lsof 检查监听端口、测试 DNS 与外网连通性、查看防火墙（pfctl 摘要）状态，定位可能的异常并给出结论。"
+    },
+    {
+      "name": "win-service",
+      "os": "windows",
+      "description": "巡检 Windows 关键服务状态",
+      "prompt": "用 PowerShell 巡检这台 Windows 服务器：检查关键服务（如 IIS、MSSQL、Docker Desktop，存在才检查）的运行状态，列出已停止或失败的服务并给出恢复建议。"
+    },
+    {
+      "name": "win-eventlog",
+      "os": "windows",
+      "description": "分析 Windows 系统事件日志错误",
+      "prompt": "用 PowerShell 分析这台 Windows 服务器最近的系统事件日志：读取 System 日志中最近的 Error 与 Critical（如 Get-WinEvent），归纳主要问题与可能原因。"
+    },
+    {
+      "name": "win-resource",
+      "os": "windows",
+      "description": "Windows 资源状态：CPU、内存与磁盘",
+      "prompt": "用 PowerShell 检查这台 Windows 服务器的资源状态：CPU 使用、内存占用、各盘磁盘空间，逐项指出异常并给出处理建议。"
+    },
+    {
+      "name": "cache-cleanup",
+      "os": "all",
+      "description": "分析可安全清理的临时与缓存文件",
+      "prompt": "分析当前用户目录下的临时文件、缓存与旧日志占用：列出可以安全清理的内容及其体积，并给出建议清理命令（仅列出，不执行删除，标注每项是否安全）。"
+    }
+  ]
+}

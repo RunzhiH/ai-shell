@@ -57,6 +57,7 @@
                 </Menu>
                 <Menu text="%main.help">
                     <items>
+                        <MenuItem text="%main.checkUpdate" onAction="#checkForUpdates"/>
                         <MenuItem text="%main.support" onAction="#openDonation"/>
                         <MenuItem text="%main.about" onAction="#openAbout"/>
                     </items>
@@ -78,9 +79,10 @@
                         <tooltip><Tooltip text="%workbench.aiAssistant.tip"/></tooltip>
                     </Button>
                 </HBox>
-                <Region HBox.hgrow="ALWAYS"/>
-                <!-- 当前目标：只放短标识，完整目标由代码写入 tooltip，避免挤压与重复拼接 -->
-                <HBox spacing="6" alignment="CENTER_LEFT" minWidth="140" prefWidth="240" maxWidth="340" HBox.hgrow="SOMETIMES">
+                <!-- 当前目标：只放短标识，完整目标由代码写入 tooltip，避免挤压与重复拼接。
+                     hgrow=ALWAYS：窗口变窄时这里先收窄让位，右侧主操作按钮保持完整可点区域，
+                     不再出现按钮被压到 32px、文字被裁掉点不中的情况。 -->
+                <HBox spacing="6" alignment="CENTER_LEFT" minWidth="140" prefWidth="200" maxWidth="340" HBox.hgrow="ALWAYS">
                     <Label text="●" fx:id="hostStatusDot" style="-fx-text-fill: -fx-success-color;"/>
                     <Label fx:id="currentHostLabel" text="%main.disconnected" styleClass="current-host-value" minWidth="0" maxWidth="320" HBox.hgrow="ALWAYS" textOverrun="ELLIPSIS">
                         <tooltip><Tooltip text="${currentHostLabel.text}"/></tooltip>
@@ -199,7 +201,7 @@
         </SplitPane>
     </children>
 
-    <BorderPane styleClass="status-bar" minHeight="32" prefHeight="32">
+    <BorderPane styleClass="status-bar" minHeight="36" prefHeight="36">
         <left>
             <HBox spacing="8" alignment="CENTER_LEFT">
                 <Label fx:id="statusTerminalTab" text="Terminal" styleClass="status-label"/>

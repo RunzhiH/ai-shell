@@ -372,7 +372,7 @@ public class TerminalTabController {
                         commandInput.positionCaret(commandInput.getLength());
                     }
                     event.consume();
-                } else if (event.isControlDown() && event.getCode() == KeyCode.C) {
+                } else if (event.isControlDown() && !event.isShiftDown() && event.getCode() == KeyCode.C) {
                     // Ctrl+C：有选中文本则复制；无选中时向远端发送中断信号 ETX（此前只注释承诺未实现，2026-10-23 审计 P1-19）
                     String selectedText = terminalOutput.getSelectedText();
                     if (selectedText != null && !selectedText.isEmpty()) {
@@ -380,6 +380,10 @@ public class TerminalTabController {
                     } else {
                         sendControlCharacter('\u0003');
                     }
+                    event.consume();
+                } else if (event.isControlDown() && !event.isShiftDown() && event.getCode() == KeyCode.V) {
+                    // Ctrl+V：粘贴（与 Ctrl+C 一样不再要求 Shift）
+                    terminalOutput.paste();
                     event.consume();
                 } else if (event.isControlDown() && event.getCode() == KeyCode.A) {
                     // Ctrl+A - 全选
@@ -417,11 +421,11 @@ public class TerminalTabController {
                     reconnectToServer();
                     event.consume();
                 } else if (event.isControlDown() && event.isShiftDown() && event.getCode() == KeyCode.C) {
-                    // Ctrl+Shift+C - 复制
+                    // Ctrl+Shift+C - 复制（兼容旧快捷键，主快捷键为 Ctrl+C）
                     terminalOutput.copy();
                     event.consume();
                 } else if (event.isControlDown() && event.isShiftDown() && event.getCode() == KeyCode.V) {
-                    // Ctrl+Shift+V - 粘贴
+                    // Ctrl+Shift+V - 粘贴（兼容旧快捷键，主快捷键为 Ctrl+V）
                     terminalOutput.paste();
                     event.consume();
                 } else if (event.isControlDown() && event.getCode() == KeyCode.U) {
@@ -584,12 +588,11 @@ public class TerminalTabController {
             "快捷键:\n" +
             "  Enter: 执行当前行命令\n" +
             "  Ctrl+Enter: 执行选中命令\n" +
-            "  Ctrl+C: 中断当前进程\n" +
+            "  Ctrl+C: 复制选中内容（无选中时中断当前进程）\n" +
+            "  Ctrl+V: 粘贴\n" +
             "  Ctrl+L: 清屏\n" +
             "  Ctrl+A: 全选\n" +
             "  Ctrl+R: 显示命令历史\n" +
-            "  Ctrl+Shift+C: 复制\n" +
-            "  Ctrl+Shift+V: 粘贴\n" +
             "  F1: 显示帮助\n" +
             "  F2: 显示连接信息\n" +
             "  F3: 重新连接\n\n" +

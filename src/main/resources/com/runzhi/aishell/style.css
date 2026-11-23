@@ -46,9 +46,17 @@
     -fx-font-size: 12px;
 }
 
-.terminal-toolbar .button {
+/* 工具栏紧凑控件：按钮与【更多】菜单按钮同高，避免菜单按钮撑高整行、
+   与右侧 Agent 悬浮面板的阴影相互侵占（2026-11-11 修复） */
+.terminal-toolbar .button, .terminal-toolbar .toggle-button, .terminal-toolbar .menu-button {
     -fx-padding: 5 9;
     -fx-font-size: 12px;
+}
+.terminal-toolbar .menu-button > .arrow-button {
+    -fx-padding: 1 4;
+}
+.terminal-toolbar .menu-button .label {
+    -fx-padding: 0 4;
 }
 
 .terminal-tab-pane .tab-header-area .tab-header-background {
@@ -719,7 +727,8 @@
     -fx-background-color: -fx-panel;
     -fx-border-color: -fx-line;
     -fx-border-width: 1 0 0 0;
-    -fx-padding: 0 14;
+    /* 上下留白：底部交互项（如「文件」）不再紧贴窗口底边，整圈都有可点余量 */
+    -fx-padding: 4 14;
 }
 
 .status-bar .status-label {
@@ -842,6 +851,11 @@
     -fx-text-fill: -fx-text-primary;
 }
 
+/* 输入栏骨架：左右内边距加大，按钮不再贴着终端面板左右边缘（GitHub #8） */
+.command-input-bar {
+    -fx-padding: 6 14;
+}
+
 /* Agent workspace and independent AI assistant stay separate. */
 .agent-workspace-host {
     -fx-background-color: -fx-panel;
@@ -855,7 +869,7 @@
 
 /* Role-based transcript blocks: one outer scroll, no fixed-height message boxes. */
 .agent-message {
-    -fx-padding: 6 8;
+    -fx-padding: 8 10;
     -fx-background-color: transparent;
     -fx-border-color: transparent;
     -fx-border-width: 0 0 0 2;
@@ -875,7 +889,7 @@
     -fx-border-color: -fx-success-color;
 }
 .agent-message-status {
-    -fx-padding: 2 8;
+    -fx-padding: 3 10;
     -fx-border-width: 0;
 }
 .agent-message-think, .agent-message-tool {
@@ -890,6 +904,10 @@
 .agent-role-question { -fx-text-fill: -fx-warning-color; }
 .agent-role-error { -fx-text-fill: -fx-danger-color; }
 .agent-role-success { -fx-text-fill: -fx-success-color; }
+.agent-role-assistant { -fx-text-fill: -fx-text-primary; }
+.agent-role-status { -fx-text-fill: -fx-text-secondary; }
+.agent-role-think { -fx-text-fill: -fx-text-disabled; }
+.agent-role-tool { -fx-text-fill: -fx-success-color; }
 .agent-message-text {
     -fx-fill: -fx-text-primary;
     -fx-font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
@@ -900,8 +918,19 @@
     -fx-font-family: "Cascadia Code", Consolas, monospace;
     -fx-font-size: 12px;
 }
-.agent-message-text-status, .agent-message-text-think, .agent-message-text-tool {
-    -fx-fill: -fx-text-secondary;
+/* 角色配色：不同来源的文字用颜色区分（GitHub #4）。
+   未列出的角色（assistant/question）使用默认正文色，保证最高对比度。 */
+.agent-message-text-user { -fx-fill: -fx-info-color; }
+.agent-message-text-status { -fx-fill: -fx-text-secondary; }
+.agent-message-text-think { -fx-fill: -fx-text-disabled; }
+.agent-message-text-tool { -fx-fill: -fx-success-color; }
+.agent-message-text-error { -fx-fill: -fx-danger-color; }
+.agent-message-text-success { -fx-fill: -fx-success-color; }
+
+/* 拖选消息片段的高亮层：跟随选中色，不遮挡文字。 */
+.agent-selection-highlight {
+    -fx-fill: -fx-accent;
+    -fx-opacity: 0.30;
 }
 .agent-message-option {
     -fx-text-fill: -fx-text-primary;
@@ -1014,6 +1043,25 @@
 
 .ai-command-btn:hover {
     -fx-background-color: -fx-hover-bg;
+}
+
+/* 审批卡片的“拒绝”是与“批准执行”并列的关键操作：红色实底、靠右，确保清晰可辨。 */
+.agent-reject-button {
+    -fx-background-color: derive(-fx-danger-color, -40%);
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-border-color: derive(-fx-danger-color, -55%);
+}
+
+.agent-reject-button:hover {
+    -fx-background-color: derive(-fx-danger-color, -25%);
+}
+
+.agent-reject-button:disabled {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-text-disabled;
+    -fx-border-color: transparent;
+    -fx-font-weight: normal;
 }
 
 /* File navigation and transfer surfaces. */
@@ -1253,6 +1301,52 @@
     -fx-min-width: 56;
 }
 
+/* 主机监控页：统一头部、状态芯片与四视图工具栏（方案 §3） */
+.monitor-header-bar {
+    -fx-padding: 0 0 12 0;
+    -fx-border-color: -fx-line;
+    -fx-border-width: 0 0 1 0;
+}
+
+.monitor-status-chip {
+    -fx-font-size: 12px;
+    -fx-padding: 2 8;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+
+.monitor-status-chip.status-ok {
+    -fx-text-fill: -fx-success-color;
+    -fx-background-color: derive(-fx-success-color, 60%);
+}
+
+.monitor-status-chip.status-error {
+    -fx-text-fill: -fx-danger-color;
+    -fx-background-color: derive(-fx-danger-color, 60%);
+}
+
+.monitor-tab-pane {
+    -fx-padding: 8 0 0 0;
+}
+
+.view-toolbar {
+    -fx-alignment: CENTER_LEFT;
+    -fx-spacing: 10;
+}
+
+.monitor-table .table-cell {
+    -fx-padding: 5 8;
+    -fx-font-size: 12px;
+}
+
+.resource-bar {
+    -fx-pref-height: 18;
+}
+
+.metric-card .chart-title {
+    -fx-padding: 0 0 4 0;
+}
+
 .command-input > .choice-box {
     -fx-min-width: 100;
 }
@@ -1475,7 +1569,7 @@
 }
 
 /* Phase 2: distinguish the nonmodal Agent overlay from the file workspace. */
-.agent-overlay { -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.20), 10, 0, -3, 0); }
+.agent-overlay { -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 5, 0, -2, 0); }
 
 /* Phase 3 compact browser. */
 .file-manager-area .table-row-cell { -fx-cell-size: 28; }
@@ -1493,3 +1587,37 @@
 .file-manager-area .table-row-cell { -fx-cell-size: 24; }
 .file-manager-area .table-cell { -fx-padding: 2 6; }
 .file-manager-area .directory-tree .tree-cell { -fx-padding: 2 4; -fx-cell-size: 24; }
+
+
+/* ==================== 编辑器 ==================== */
+.editor-window .editor-toolbar,
+.editor-window .editor-find-bar {
+    -fx-padding: 4 8;
+    -fx-spacing: 6;
+    -fx-background-color: -fx-panel-bg;
+}
+.editor-window .editor-status-bar {
+    -fx-padding: 3 10;
+    -fx-background-color: -fx-panel-bg;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+.editor-window .editor-text {
+    -fx-font-family: monospace;
+    -fx-font-size: 13px;
+}
+/* RichTextFX 行号 */
+.editor-window .lineno {
+    -fx-background-color: -fx-panel-bg;
+    -fx-text-fill: -fx-text-secondary;
+    -fx-padding: 0 8 0 4;
+    -fx-border-color: -fx-border-default;
+    -fx-border-width: 0 1 0 0;
+}
+/* 语法高亮：注释 / 字符串 / 关键字 / 数字 / 标签 */
+.syntax-comment { -fx-text-fill: #7F9F7F; -fx-font-weight: normal; }
+.syntax-string { -fx-text-fill: #CC9966; }
+.syntax-keyword { -fx-text-fill: #6C9ED8; -fx-font-weight: bold; }
+.syntax-number { -fx-text-fill: #D3B6A6; }
+.syntax-tag { -fx-text-fill: #6C9ED8; }
+.syntax-text { -fx-text-fill: -fx-text-primary; }

@@ -129,8 +129,11 @@ public class SettingsDialogController implements Initializable {
         TreeItem<String> shortcutCategory = createTreeItem(I18n.tr("settings.shortcuts"));
         registerSettingsPage(shortcutCategory, "/com/runzhi/aishell/settings-shortcuts.fxml", "shortcuts");
         
+        TreeItem<String> editorCategory = createTreeItem(I18n.tr("settings.editor"));
+        registerSettingsPage(editorCategory, "/com/runzhi/aishell/settings-editor.fxml", "editor");
+        
         // 添加到根节点
-        root.getChildren().addAll(generalCategory, sshCategory, aiCategory, shortcutCategory);
+        root.getChildren().addAll(generalCategory, sshCategory, aiCategory, shortcutCategory, editorCategory);
         
         // 设置到 TreeView
         settingsTree.setRoot(root);
@@ -259,6 +262,7 @@ public class SettingsDialogController implements Initializable {
             else if (controller instanceof SettingsSSHController ssh) ssh.saveSettings();
             else if (controller instanceof SettingsAIController ai) ai.saveSettings();
             else if (controller instanceof SettingsShortcutsController shortcuts) shortcuts.saveSettings();
+            else if (controller instanceof SettingsEditorController editor) editor.saveSettings();
         });
     }
 

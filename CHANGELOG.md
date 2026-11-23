@@ -2,6 +2,171 @@
 
 版本变更记录，区分**已实现**、**实验性（暂缓）**与**计划中**功能。
 
+## [1.11.0] - 2026-11-23
+
+### Agent 面板优化（GitHub #11）
+
+- **指令类回复一键执行**：AI 回复正文本身是单行指令（单行、无中文、无句末标点、首词为命令式 token）时，消息卡内附「粘贴到终端执行」按钮，点击把命令写入当前会话终端并回车执行；说明性文字不出现该按钮
+  - 复制能力保持既有设计：每条消息带「复制」按钮，正文可拖选片段后 Ctrl+C（macOS Cmd+C）
+- **测试**：新增 `AgentCommandReplyActionTest`（按钮出现与触发、说明文字不出现、looksLikeCommand 边界）
+
+## [1.10.0] - 2026-11-23
+
+### Agent 历史跟随标签页（GitHub #10）
+
+- **关闭标签即落盘**：此前 Agent 历史只在任务结束事件时异步保存，用户中途关闭终端标签后，最后一段对话内容未写盘，重连后用「历史」打开只剩旧内容；现在关闭标签时立即把该连接的历史快照同步写盘（复用既有防抖写入器的 flush）
+- **测试**：新增 `AgentHistoryTabCloseTest`（关闭标签触发落盘、无 Agent 工作区时空转不报错）
+
+## [1.9.0] - 2026-11-23
+
+### 服务器检测无效修复（GitHub #9）
+
+- **目标系统/默认 Shell 设置生效**：AI 设置页的「目标系统」与「默认 Shell」此前每次打开都被重置为 Linux/Bash，且没有任何代码读取，形同虚设；现在设置值持久化到 app_configs.json
+  - Agent 系统提示词加入目标服务器描述（如「The target server runs windows with a powershell shell.」），模型按平台生成命令
+  - /skills 技能过滤与 SkillLibrary 以同一份目标系统偏好为准
+- **测试**：新增 `AgentRuntimeTargetServerTest`，`AgentOsPreferenceTest` 补充 Shell 往返与未知值回落
+
+## [1.8.0] - 2026-11-23
+
+### 终端交互优化（GitHub #8）
+
+- **标签页名称自定义**：每个终端标签右键新增「重命名标签 / 关闭标签」菜单；重命名同步更新基准标题，Agent 运行角标仍按基准标题正确拼接
+- **操作条左右间距加大**：命令输入栏左右内边距 8 → 14px，按钮不再贴边
+- **重连移出误操作区**：命令输入行的「重连」按钮移除（与「执行」紧邻易误点中断会话），重连统一由终端面板顶部工具栏承担
+- **测试**：新增 `TerminalTabRenameTest`（右键菜单、重命名应用、空白名称拒绝）
+
+## [1.7.0] - 2026-11-23
+
+### 终端 bug：Agent 执行后无法键入（GitHub #7）
+
+- **Agent 执行输出镜像限量**：docker logs/build 等命令动辄上 MB 输出，此前全量逐行写进 JediTerm 会长时间独占 FX 线程并灌爆终端缓冲区，表现为切回终端后无法键入；现镜像上限 4000 字符，超出部分截断并提示「完整内容见 Agent 工作区」
+- **步骤结束归还终端输入**：Agent 每个执行步骤（成功/失败）后移除残留的 AI 命令审批面板、恢复命令输入框可用并聚焦；切换终端标签时若无运行中的 Agent 会话同样归还焦点
+- **测试**：新增 `TerminalInputRestoreTest`（残留面板移除/输入框恢复与聚焦/空容错、超长输出截断）
+
+## [1.6.0] - 2026-11-23
+
+### Skill 技能库接入（GitHub #6）
+
+- **Agent 内置技能库**：新增 `agent-skills.json`（14 个常用技能）与 `SkillLibrary`，按目标操作系统分类——Linux 7 个（资源巡检、磁盘占用、网络排查、服务巡检、日志分析、安全审计、Docker 巡检）、macOS 3 个（brew 更新、资源、网络）、Windows 3 个（服务巡检、事件日志、资源）、跨系统通用 1 个（缓存清理建议）
+  - Agent 控制台新增 `/skills [linux|macos|windows|all]` 列出技能、`/skill <name>` 应用技能：新建以技能名为标题的任务，并把技能提示词填入输入框，检查后按回车执行
+  - 不带参数的 /skills 按当前选中的目标操作系统过滤；命令补全与 /help 同步更新
+  - 技能加载失败退化为空列表，不阻断 Agent 主流程
+  - 新增 `SkillLibraryTest`（加载/去重/操作系统过滤/名称查找）与 `AgentOsPreferenceTest`
+
+## [1.5.0] - 2026-11-23
+
+### Agent 面板修改二（GitHub #5）
+
+- **拒绝按钮防误操作加固**：审批卡片里「拒绝」继续独占一行并靠右红色醒目（与上一版的布局一致），同时把拒绝行与执行行的竖直间距从 4px 拉大到 10px，点「执行」时不再容易误中「拒绝」
+  - 拒绝按钮新增说明 tooltip（拒绝该提议（不执行命令）/ Reject this proposal），降低误点概率
+  - 新增 `ApprovalCardRejectPlacementTest`：拒绝与执行分属不同行、行距 10px、保留红色样式与 tooltip
+
+## [1.4.0] - 2026-11-23
+
+### Agent 面板修改一（GitHub #4）
+
+- **输出后保持在最下方**：用户发送消息时无条件拉回转录区底部（此前若上滚阅读历史，新消息与后续 AI 输出不会跟随，容易「看不到新内容」）；待审批命令卡片与可重试错误卡片同样强制滚到底部，避免错过审批阻塞任务
+  - 新增公共 `jumpToBottom()`：先 applyCss + layout 再定位到 vvalue=1.0，与既有「用户上滚不被打扰」的跟随逻辑互补
+- **行间距加大**：消息卡间距 8 → 12px，卡片内边距 6/8 → 8/10px，正文 TextFlow 行间距 2 → 5px，长文本更易读
+- **不同文字按颜色区分**：用户输入蓝（-fx-info-color）、AI 回复正文色、思考过程暗灰（-fx-text-disabled）、工具/命令输出绿（-fx-success-color）、错误红、完成绿；未显式列出的角色保持默认正文色以保证对比度；角色标签同步配色；颜色全部走主题 token，浅色主题自动适配
+- **测试**：新增 `AgentPanelReadabilityTest`（消息/行间距、角色配色类、审批卡片强制回到底部、jumpToBottom）
+
+## [1.3.0] - 2026-11-23
+
+### 软件使用说明（GitHub #3）
+
+- **关于对话框加入 GitHub 仓库地址**：帮助 → 关于里的仓库地址为可点击链接，调用系统默认浏览器打开（Desktop.browse 优先，无桌面环境时按平台回退 rundll32 / open / xdg-open，全部失败则复制地址到剪贴板）
+- **自动检查更新**：启动后静默查询 GitHub 最新 release，每天至多一次（上次检查日期存于 ~/.aishell/app_configs.json）；发现新版本时提示并提供「前往下载」跳转到发布页；IDE 直跑（版本为 dev）或查询失败时不打扰用户
+  - 帮助菜单新增「检查更新…」入口，关于对话框内亦提供链接；手动检查无论结果都反馈，已是最新版本时提示当前版本号
+  - 版本比较按点分字段逐段数值比较（1.10.0 晚于 1.9.0），新增 UpdateCheckerTest 覆盖比较与归一化逻辑
+
+## [1.2.0] - 2026-11-23
+
+### 终端标签页管理（GitHub #2）
+
+- **同一连接复用已有标签页**：从连接列表、欢迎页或「新建标签」对话框重复连接同一台机器（`user@host:port` 相同）时，改为选中并聚焦既有标签，不再重复开出同类标签；若既有标签的连接已断开，则在原标签内原地重连
+  - 「新建标签」对话框路径与参数管理器路径统一收敛进 `createNewTerminalTabWithParams`，与侧栏树激活（`activateConnection`）使用同一套 `user@host:port` 判定
+  - 新增 `TerminalTabReuseTest`：同连接复用、不同连接仍新建、显示名/别名不影响判定
+
+### 已实现
+
+- **贴边按钮可点性修复**（按 JavaFX 布局复刻实测）
+  - **顶栏**：窗口变窄时右侧按钮最小被压到 32px 宽、文字被裁得点不中；改为由当前主机标签（hgrow=ALWAYS、prefWidth 200）先行让位，1024px 宽起所有按钮保持完整尺寸，980px（新最小宽度）时最窄 45px
+  - **状态栏**：「文件」按钮原距窗口底边仅 1px、几乎贴死底缘；状态栏加高至 36px 并加 4px 上下内边距，按钮四周留 3 至 6px 余量
+  - **终端工具栏**：minHeight 36 小于内容所需 44（上下内边距 8+8 加按钮 28），窗口高度紧张时按钮上下被裁；改为 44
+  - **终端命令输入栏**：原无内边距，「执行/重连」紧贴终端面板边缘；加 6/8px 内边距
+  - **主窗口最小尺寸**：新增 980x600 下限，窗口无法再被拖小到按钮被压扁的状态
+- **Agent 工作区交互优化**（按 `docs/agent-workspace-ui-optimization-plan.md`）
+  - **宽度可拖动**：`OVERLAY`/`DRAWER` 模式下 Agent 面板固定宽度的限制解除，左缘 4–6px 热区拖拽改宽（钳制 280 至工作区-240），宽度按模式分别持久化（`terminal.agent.overlay.width` / `terminal.agent.drawer.width`）；`SPLIT` 模式仍由分隔条与比例记忆负责；overlay 遮挡宽度改按面板实际宽度计算，文件抽屉始终不被盖住操作区
+  - **独立窗口**：Agent 面板头部新增「↗ 弹出独立窗口」按钮，工作区以非模态 `Stage` 弹出（显式 `Modality.NONE），弹出后终端输入执行、SFTP/ZMODEM 传输等主窗口操作完全不受影响；关闭窗口（点 ✕ 或再点按钮）即挂回主面板并保持任务与会话连续；窗口位置尺寸持久化；主窗口关闭时一并收起独立窗口；审批定位、标签角标、关闭保护等链路不受影响
+  - **对话选择复制**：消息正文升级为可拖选的 TextFlow（保持唯一滚动面、不引入 TextArea），拖选高亮 + Ctrl+C（macOS Cmd+C）复制片段；无选区时快捷键交还给输入框；右键提供「复制」菜单；保留每条消息的整条复制按钮
+  - **审批卡片布局**：拒绝按钮靠右并改为红色实底醒目样式（`agent-reject-button`），与左侧辅助操作（复制/填入终端/执行）拉开距离，降低误点
+  - **修复新消息不滚到底部**：`setVvalue(1.0)` 改为先 `applyCss` + `layout` 再定位（内容布局完成前滚动范围未确定，像素锚定会让提前设置的定位失效，表现为停在半路、或切换会话整段重放后停在顶部）；`isNearBottom` 阈值 36 提高到约一个消息卡高度，消除“内容刚超出视口、vvalue 被钳制为 0”被误判为“用户在顶部”而中断跟随的情形；用户主动向上滚仍不被打扰
+- **文件管理器新建文件**：本地/远程工具栏新增「新建文件」，在当前目录创建空文件——本地走 `Files.createFile`（已存在则报错不覆盖），远程先 `remotePathExistsForTab` 查重、再 `writeBytesForTab` 写空字节（不弹模态成功框，状态行反馈）；创建后两侧列表自动刷新
+- **文件管理器显示隐藏文件**（按 `docs/file-manager-optimization-plan.md`）
+  - 本地/远程工具栏各加「显示隐藏文件」开关：本地按平台语义（`Files.isHidden`）、远程按点号开头判定；关闭时文件表与目录树同步过滤，开启时全部显示并置灰区分（见样式）；开关状态持久化（`fileManager.showHidden`，默认显示，与既有行为一致），内嵌抽屉与独立窗口共用同一套面板
+  - `DirectoryTree` 新增 `reload()`：过滤条件变化后强制重读已展开节点
+- **测试**：新增 `AgentTranscriptSelectionTest`（拖选产生非空前缀选区、Ctrl+C 复制、转录区仍无 TextArea/嵌套滚动面）、`AgentTranscriptFollowTest`（流式追加与整段重放停在底部、用户在顶部不被拉回）、`AgentWorkspaceResizeTest`（保存宽度恢复、越界钳制、左缘拖动加宽并持久化、SPLIT 不受 overlay 宽度影响）、`AgentWorkspaceDetachedWindowTest`（非模态弹出、终端保持可用、挂回与主窗口关闭联动）、`FileManagerHiddenFilesTest`（点号判定、平台隐藏项过滤、开关持久化）、`FileManagerNewFileTest`（本地建空文件并列入表格、远程经 Proxy 假 SSHService 先查重再写字节）
+
+- **主机监控增强**（按 `docs/design/主机监控UI与功能增强方案.md` 阶段一至三）
+  - **采样会话与状态**：连接级监控会话（会话标识随快照下发、切换主机/重连后旧会话数据丢弃）；采样状态模型区分有效零值 / 首次采样 / 失败 / 降级 / 已过期，单项失败只影响该项；暂停同时停止采样与更新，恢复时重建差分基线避免速率突刺；窗口隐藏自动暂停；采样间隔下拉（1/2/5/10 秒）立即生效（修复 `setMonitorInterval()` 空实现 bug）；立即刷新复用调度入口不重叠采样
+  - **四视图切换**：概览 / 磁盘 I/O / 进程 / 网络接口共用当前 SSH 连接；统一头部含当前主机、连接状态、最后更新时间与采样耗时；趋势支持最近 1/5/15 分钟
+  - **磁盘 I/O**：完整读取 /proc/diskstats（修复 `head -n 5` 漏设备）；按设备差分计算吞吐、IOPS、平均请求耗时（无操作时显示 —）、繁忙占比；设备层级（物理/分区/逻辑卷）与挂载点关联；设备消失/重现/计数器重置仅重建该设备基线，不输出负速率
+  - **多接口网络**：按接口差分（增删/重置只影响该接口），汇总标注统计范围；错误/丢包增量；IPv4/IPv6、MTU、状态、链路速率（未知时不计算带宽利用率）；lo/桥接/虚拟接口默认隐藏可切换
+  - **进程列表**：搜索（名称/PID/用户/命令行）、状态筛选、排序、PPID/线程数/启动时间可选列；详情含按需加载工作目录与资源变化；CPU% 单核满载 100% 口径；复制 PID/命令行；刷新保持搜索、排序与选中项，选中退出时提示（PID 复用以 PID+启动时间区分）
+  - **资源分析修正**：CPU/内存/磁盘/Swap 使用率不再混合进同一饼图（无共同分母），改为各自独立资源条与口径说明；进程状态分布饼图保留
+  - **采样节流**：快速通道 2 秒、进程 5 秒（进入进程页启用）、低频 30 秒（容量/接口地址/扇区大小）；同通道不重叠、过慢跳过；每会话并发命令上限（3）；有界历史缓存与曲线点数（600）
+- **测试**：新增 `DiskIoCollectorTest`（完整设备解析、差分速率、计数器重置、设备增删、层级分类、挂载关联）、`NetworkInterfaceCollectorTest`（按接口差分、表头跳过、重置重建、地址解析、虚拟接口识别、降级）、`ProcessCollectorTest`（含空格/特殊字符命令行、内核线程、状态计数、资源增量、PID 复用、逐行降级）、`MonitorSessionTest`（会话隔离、暂停恢复基线重建、停止不回调、间隔立即生效）、`AdvancedMonitorResourceBarsTest`（独立资源条与有效零值/占位）；重写 `MonitorPanelTimeAxisTest` 适配四视图 FXML
+
+### 修复与质量
+
+- **终端复制/粘贴快捷键**：主快捷键改为 `Ctrl+C` / `Ctrl+V`（macOS 为 `Cmd+C` / `Cmd+V`），不再要求 Shift；`Ctrl+C` 有选中文本时复制、无选中时仍向远端发送中断信号，`Ctrl+Shift+C/V` 保留为兼容别名；终端帮助对话框同步更新
+- **Agent 自动审批开关生效**：Agent 工作区的“自动批准低风险只读命令与文件写入”开关现在同时作用于 Agent 工具调用与命令提案；自动批准范围包含低风险只读命令、中低风险文件写入（写文件/建目录/重命名，以及 mkdir/touch/cp/mv/ln/install/sed -i 等安全写命令）；删除、sudo、服务/进程/包管理、权限修改与高风险命令仍需人工审批，不提供全部放行模式；开关按连接持久化，任务运行中禁止切换；权限说明同步区分“低风险只读命令”和“中低风险写操作”
+- **自动批准白名单加固**：只读校验之外新增安全写入校验（单命令、无管道/链式操作、非敏感路径；重定向仅限简单 echo/printf 写文件）；`env` 包装、`date -s`、`hostname -F`、`journalctl --vacuum/--rotate`、`rm`、`chmod`、`sudo` 等即使风险等级不高也回退人工确认
+- `setMonitorInterval()` 此前是空方法（公共 API 静默忽略入参），现在立即作用于正在运行的会话
+- 磁盘容量卡片仅在 `diskUsage > 0` 时更新、有效零值无法覆盖旧显示的问题
+- 磁盘统计不再使用 `head -n 5` 截断设备列表
+- 概览趋势图时间轴主刻度有界化，并在范围（1/5/15 分钟）切换时缩放步长（10 秒/60 秒/120 秒）
+
+
+### 打包
+
+- **macOS 打包支持**：新增 `packaging/build-package.sh`，与 Windows 脚本对等（mvn 胖 jar → jlink 定制 JRE → jpackage 生成 `.app` 与 `.dmg`，模块与 `--add-opens` 参数与 Windows 包一致）；`packaging/make_icon.py` 现在同时导出 `app-icon.icns`；签名可选（`AISHELL_MAC_SIGN_IDENTITY` 传入 Developer ID 证书），README 补充 macOS 打包说明。jpackage 不能交叉打包，macOS 包必须在 macOS 上生成。
+- **版本号自动管理**：Windows/macOS 打包脚本把版本号第 3 段改为自动构建号（git 提交数 ×2，工作区有未提交改动时 +1），经 pom 的 `revision` 属性注入 Maven，jar 文件名、`AppConstants.APP_VERSION`（运行时读 jar 清单 `Implementation-Version`，IDE 直跑回落为 `dev`）与安装包版本号三处自动一致，每次打包版本号唯一递增；常规发版不再需要手动 bump pom 版本号，想换大版本号时改 `revision` 即可
+- **MSI 覆盖升级修复**：Windows 安装包固定 `--win-upgrade-uuid`（UpgradeCode）；此前版本号不变时新包被识别为“已安装的同一个产品”无法覆盖，版本号递增后双击新 MSI 即自动卸载旧版本
+
+## [1.2.0] - 2026-11-05
+
+### 已实现
+
+- **内置文本编辑器**（按 `docs/editor-and-external-editor-plan.md` P1 落地）
+  - 文件面板双击文件按设置打开（默认内置编辑器），右键菜单提供「编辑」与「用外部编辑器」二级菜单（含系统默认程序项）
+  - 打开/保存走 SFTP 字节级通道（`FileTransferService.stat/readBytes/writeBytes`），远端不需要装任何软件
+  - 保留编码与换行：UTF-8 BOM、UTF-16LE/BE BOM、无 BOM 严格 UTF-8、GBK 回退、Latin-1 只读预览；EOL 按 LF/CRLF/CR 多数统计并在保存时还原
+  - 保存前 mtime/size 冲突检测，远端被改过时弹「重新加载 / 覆盖 / 另存为 / 取消」，绝不静默覆盖
+  - 保护：超过内置上限（默认 2MB）提供「只读打开 / 外部编辑器 / 下载」，二进制与无权限文件只读，保存后按原权限 chmod 恢复
+  - 编辑器窗口：多标签、工具栏（保存 / 重新加载 / 另存为 / 查找 / 外部编辑器 / 在终端打开所在目录）、状态栏（路径 / 编码 / EOL / 大小 / 只读原因）、Ctrl+S、Ctrl+Shift+S、Ctrl+F、Ctrl+H、F3、F5、Ctrl+W，脏标签关闭三选一
+  - 查找替换栏（区分大小写开关、回绕、计数、替换 / 全部替换）
+  - 会话恢复：窗口关闭时未保存的标签落到 `~/.aishell/editor-restore/<session>.json`，再次打开同一文件时回填为脏文档
+  - 行号与语法高亮：有显示器的环境正文组件升级为 RichTextFX CodeArea（行号 + 注释/字符串/数字/关键字/标签轻量高亮，
+    覆盖 Java/Python/JS/Go/Rust/C/C++/Shell/SQL/JSON/YAML/XML/CSS/Markdown 等；防抖 250ms），无显示器环境（CI）自动回退 TextArea
+  - 本地文件用同一套文档模型与窗口打开
+- **外部编辑器**（方案 P2）
+  - 默认检测 VS Code、Notepad++、Sublime Text、gVim、JetBrains 全家桶（`Program Files\JetBrains\<产品>\bin\*` 与 PATH 中的 `idea`/`idea64`）、Windows 记事本、macOS TextEdit、Linux gedit/kate；也支持自定义命令模板（`{file}` 占位，参数列表启动，不经过 shell）
+  - 外部编辑器为二级菜单（文件面板右键与编辑器窗口工具栏）：自动选择、全部检测到的编辑器、「选择其他程序…」（文件选择器指定任一可执行文件），随时切换并记为首选，首次使用仍弹选择框
+  - 下载到会话级临时目录（`%TEMP%/aishell-edit/<session>/<sha1>`），WatchService + 500ms 防抖 + 大小稳定 + SHA-256 比对，兼容 VS Code 原子保存
+  - 保存后按设置自动回传（默认开）或弹「上传 / 仅保留本地 / 放弃」，回传带 mtime 冲突校验；临时文件按保留期（默认 7 天）在启动时与退出时清理
+  - 设置页新增「编辑器」分类：双击打开方式、外部命令、自动上传、内外上限、回退编码、临时保留天数
+- **测试**：新增 TextCodec（编码 / EOL / 二进制 / BOM / 末尾换行）、RemoteEditorService（fake SSH：冲突 / 覆盖 / 只读 / 超限 / 重载）、EditorPreferences（默认值与越界回退）、ExternalEditorService（模板替换 / 哈希 / 临时清理）、ExternalEditorOpen（打开链路回归：stat / 下载 / 启动 / 失败回调）、ExternalEditorPathResolution（Windows PATHEXT 解析回归）、EditorWindow（FXML 加载 / 脏标记 / 保存回写 / 标签复用 / Ctrl+S / 二进制只读）、FileManagerEditorEntry（双击文件 / 目录导航 / 右键二级菜单）、EditorSessionStore（会话恢复存储读写 / 清除）、SyntaxHighlighter（语言识别 / 样式区间覆盖）共 10 组单测
+
+### 修复与质量
+
+- **外部编辑器「无反应」**：监视循环与打开任务共用单线程 executor 导致打开任务永远排队，改为独立的监视线程
+- **模块化运行报错**：编辑器代码改用纯 JavaFX 的 `textProperty()` 订阅文本变化，不再触碰 unnamed module 的 `org.reactfx` API（打包后 `IllegalAccessError` 导致 CodeArea 静默回退）
+- **Windows 可执行文件解析**：按 `PATHEXT` 顺序匹配扩展名，不再选中无扩展名的脚本（如 VS Code `bin\code`，直接启动会被 CreateProcess 以错误 193 拒绝）；命令本身带扩展名时按原样解析
+- **本地文档外部编辑**：编辑器窗口中用外部编辑器打开本地文件时改成就地启动，不再误走远端回传路径
+- **UTF-16 BOM 误判二进制**：UTF-16 文件的高位 0 字节会被 NUL 规则误判，检测时对带 UTF-16LE/BE BOM 的文件跳过二进制判定（仍按只读保护呈现）
+
 ## [1.1.0] - 2026-11-04
 
 ### 已实现
@@ -105,8 +270,7 @@
 ### 计划中（未来完善方向）
 
 - RDP/VNC 远程桌面
-- ZMODEM（rz/sz）文件传输、打包传输（自动压缩解压）
 - Ping 延迟丢包/Trace 路由监控、多地点 Ping 监控、海外服务器加速
 - 磁盘 I/O 性能监控、进程管理、多接口网络监控
-- 内置文本编辑器、终端背景图片与动态模糊、100+ 内置配色方案
+- 终端背景图片与动态模糊、100+ 内置配色方案
 - 批量服务器管理、无限制命令历史、跨平台配置同步

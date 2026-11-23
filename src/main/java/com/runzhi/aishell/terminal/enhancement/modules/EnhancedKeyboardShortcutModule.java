@@ -73,13 +73,24 @@ public class EnhancedKeyboardShortcutModule implements TerminalEnhancementModule
      * 处理增强的键盘快捷键
      */
     private void handleEnhancedShortcuts(KeyEvent event, InlineCssTextArea outputArea) {
-        // Ctrl+Shift+C - 复制选中文本
-        if (event.getCode() == KeyCode.C && event.isControlDown() && event.isShiftDown()) {
+        // Ctrl+C - 复制选中文本；无选中时不拦截，交给文本区默认行为
+        if (event.getCode() == KeyCode.C && event.isControlDown() && !event.isShiftDown()) {
+            if (outputArea.getSelectedText() != null && !outputArea.getSelectedText().isEmpty()) {
+                outputArea.copy();
+                event.consume();
+            }
+        }
+        // Ctrl+V - 粘贴文本
+        else if (event.getCode() == KeyCode.V && event.isControlDown() && !event.isShiftDown()) {
+            outputArea.paste();
+            event.consume();
+        }
+        // Ctrl+Shift+C / Ctrl+Shift+V - 兼容旧快捷键
+        else if (event.getCode() == KeyCode.C && event.isControlDown()) {
             outputArea.copy();
             event.consume();
         }
-        // Ctrl+Shift+V - 粘贴文本
-        else if (event.getCode() == KeyCode.V && event.isControlDown() && event.isShiftDown()) {
+        else if (event.getCode() == KeyCode.V && event.isControlDown()) {
             outputArea.paste();
             event.consume();
         }

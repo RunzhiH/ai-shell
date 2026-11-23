@@ -18,8 +18,9 @@
                 <Button text="%fm.browse" onAction="#browseLocalDirectory" styleClass="secondary-button"/>
                 <Button text="%fm.up" onAction="#navigateLocalToParent" styleClass="secondary-button"/>
             </HBox>
-            <FlowPane alignment="CENTER_LEFT" hgap="4" vgap="3" styleClass="file-toolbar">
+            <FlowPane fx:id="localFileToolbar" alignment="CENTER_LEFT" hgap="4" vgap="3" styleClass="file-toolbar">
                 <Button text="%fm.new.folder" onAction="#createLocalFolder" styleClass="secondary-button"/>
+                <Button text="%fm.new.file" onAction="#createLocalFile" styleClass="secondary-button"/>
                 <Button text="%fm.delete" onAction="#deleteSelectedItems" styleClass="danger-button"/>
                 <Button text="%fm.refresh" onAction="#refreshLocalList" styleClass="secondary-button"/>
                 
@@ -56,8 +57,9 @@
                            promptText="%fm.remote.path.prompt"/>
                 <Button text="%fm.up" onAction="#navigateToParent" styleClass="secondary-button"/>
             </HBox>
-            <FlowPane alignment="CENTER_LEFT" hgap="4" vgap="3" styleClass="file-toolbar">
+            <FlowPane fx:id="remoteFileToolbar" alignment="CENTER_LEFT" hgap="4" vgap="3" styleClass="file-toolbar">
                 <Button text="%fm.new.folder" onAction="#createNewFolder" styleClass="secondary-button"/>
+                <Button text="%fm.new.file" onAction="#createNewFile" styleClass="secondary-button"/>
                 <Button text="%fm.delete" onAction="#deleteSelectedItems" styleClass="danger-button"/>
                 <Button text="%fm.refresh" onAction="#refreshFileList" styleClass="secondary-button"/>
                 

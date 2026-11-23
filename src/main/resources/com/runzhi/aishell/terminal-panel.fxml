@@ -12,7 +12,8 @@
       styleClass="terminal-panel"
       VBox.vgrow="ALWAYS">
     <children>
-        <HBox alignment="CENTER_LEFT" spacing="4" styleClass="terminal-toolbar" minHeight="36">
+        <!-- minHeight=44 = 上下内边距 8+8 + 按钮最小高 28：窗口高度紧张时按钮也不会被裁掉一半点不中 -->
+        <HBox alignment="CENTER_LEFT" spacing="4" styleClass="terminal-toolbar" minHeight="44">
             <children>
                 <Button text="%terminal.new" onAction="#createNewTab" styleClass="toolbar-button" mnemonicParsing="false"/>
                 <Button text="%terminal.reconnect" onAction="#attemptReconnection" styleClass="toolbar-button" mnemonicParsing="false"/>
@@ -24,7 +25,7 @@
                     <tooltip><Tooltip text="%workbench.agent.toggle"/></tooltip>
                 </ToggleButton>
                 <Region HBox.hgrow="ALWAYS"/>
-                <MenuButton text="%terminal.more" styleClass="toolbar-button" mnemonicParsing="false">
+                <MenuButton text="%terminal.more" styleClass="toolbar-button" minWidth="68.0" mnemonicParsing="false">
                     <items>
                         <MenuItem text="%terminal.copy" onAction="#copySelection"/>
                         <MenuItem text="%terminal.paste" onAction="#pasteContent"/>
@@ -54,6 +55,12 @@
                         <HBox alignment="CENTER_LEFT" spacing="8" styleClass="panel-head" minHeight="36">
                             <Label text="%workbench.agent" styleClass="ai-title"/>
                             <Region HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="btnPopOutAgentWorkspace" text="↗" onAction="#popOutAgentWorkspace" styleClass="nav-item" mnemonicParsing="false"
+                                    accessibleText="%workbench.agent.popOut">
+                                <tooltip>
+                                    <Tooltip text="%workbench.agent.popOut"/>
+                                </tooltip>
+                            </Button>
                             <Button fx:id="btnHideAgentWorkspace" text="×" onAction="#toggleAgentWorkspace" styleClass="nav-item" mnemonicParsing="false"
                                     accessibleText="%workbench.agent.hide">
                                 <tooltip>

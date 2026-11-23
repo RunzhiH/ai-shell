@@ -149,9 +149,10 @@ public final class AgentSessionTracker {
         notify(sessionId);
     }
 
-    /** 标签关闭或会话彻底结束时清除其状态。 */
+    /** 标签关闭或会话彻底结束时清除其状态（含自动批准开关）。 */
     public void clear(String sessionId) {
         if (sessionId == null) return;
+        AgentAutoApprovePolicy.clear(sessionId);
         SessionStateImpl removed = sessions.remove(sessionId);
         if (removed != null) {
             if (removed.pending.get() > 0 || removed.running) {

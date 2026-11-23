@@ -16,7 +16,7 @@
 
     <!-- 命令输入区域 -->
     <VBox>
-        <HBox spacing="5" alignment="CENTER_LEFT" styleClass="command-input">
+        <HBox spacing="5" alignment="CENTER_LEFT" styleClass="command-input, command-input-bar">
             <Label text="模式:" styleClass="command-input"/>
             <ChoiceBox fx:id="inputModeChoiceBox" value="普通模式"
                        styleClass="command-input"
@@ -29,7 +29,7 @@
                        promptText="输入命令..."
                        onAction="#onCommandInputAction"/>
             <Button text="执行" onAction="#executeCurrentCommand" styleClass="command-button" fx:id="executeButton"/>
-            <Button text="重连" onAction="#reconnectToServer" styleClass="command-button" fx:id="reconnectButton"/>
+            <!-- 重连已上移至终端面板工具栏：不再紧邻「执行」，避免误点中断会话（GitHub #8） -->
         </HBox>
     </VBox>
 </VBox>

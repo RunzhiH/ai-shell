@@ -20,6 +20,13 @@ import com.runzhi.aishell.terminal.InteractiveTerminalView;
 import com.runzhi.aishell.common.i18n.I18n;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.scene.Cursor;
+import javafx.scene.Group;
+import javafx.scene.Scene;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -92,11 +99,30 @@ public class TerminalPanelController extends BaseController implements com.runzh
             java.util.prefs.Preferences.userNodeForPackage(TerminalPanelController.class);
     private static final String SPLIT_DIVIDER_KEY = "terminal.agent.split";
     private static final String AGENT_OPEN_KEY = "terminal.agent.open";
+    private static final String OVERLAY_WIDTH_KEY = "terminal.agent.overlay.width";
+    private static final String DRAWER_WIDTH_KEY = "terminal.agent.drawer.width";
+    private static final String AGENT_WINDOW_X_KEY = "terminal.agent.window.x";
+    private static final String AGENT_WINDOW_Y_KEY = "terminal.agent.window.y";
+    private static final String AGENT_WINDOW_WIDTH_KEY = "terminal.agent.window.width";
+    private static final String AGENT_WINDOW_HEIGHT_KEY = "terminal.agent.window.height";
+    private static final double DEFAULT_AGENT_WINDOW_WIDTH = 420;
+    private static final double DEFAULT_AGENT_WINDOW_HEIGHT = 640;
+    private static final double MIN_AGENT_WIDTH = 280;
+    /** overlay/drawer 左缘拖拽热区宽度（SPLIT 模式由分隔条负责）。 */
+    private static final double RESIZE_EDGE = 6;
     /** 终端内 Agent 工作区宿主（默认隐藏，避免与右侧 AI 双面板） */
     @FXML
     private VBox agentWorkspaceHost;
     @FXML
     private ToggleButton btnAgentWorkspace;
+    @FXML
+    private Button btnPopOutAgentWorkspace;
+    /** Agent 独立窗口；null 表示工作区内嵌在终端面板中。 */
+    private Stage agentStage;
+    private boolean agentDetached;
+    private boolean agentResizing;
+    private double agentResizeStartX;
+    private double agentResizeStartWidth;
 
     // 服务引用
     private SSHService sshService;
@@ -175,7 +201,7 @@ public class TerminalPanelController extends BaseController implements com.runzh
      * 不取消任务、不销毁控制器、也不释放目标标签的关闭保护。
      */
     private void applyAgentPlacement() {
-        if (agentWorkspaceHost == null || terminalSplitPane == null) return;
+        if (agentDetached || agentWorkspaceHost == null || terminalSplitPane == null) return;
         boolean open = agentWorkspaceHost.isVisible();
         if (terminalSplitPane.getItems().contains(agentWorkspaceHost)) {
             terminalSplitPane.getItems().remove(agentWorkspaceHost);
@@ -193,7 +219,9 @@ public class TerminalPanelController extends BaseController implements com.runzh
                     region.maxWidthProperty().unbind();
                     if (open && agentMode == AgentMode.OVERLAY && terminalStack != null)
                         region.maxWidthProperty().bind(javafx.beans.binding.Bindings.createDoubleBinding(
-                                () -> Math.max(200, terminalStack.getWidth() - OVERLAY_AGENT_WIDTH - 12), terminalStack.widthProperty()));
+                                () -> Math.max(200, terminalStack.getWidth() - effectiveAgentWidth() - 12),
+                                terminalStack.widthProperty(), agentWorkspaceHost.widthProperty(),
+                                agentWorkspaceHost.prefWidthProperty()));
                     else region.setMaxWidth(Double.MAX_VALUE);
                 }
             }
@@ -218,9 +246,74 @@ public class TerminalPanelController extends BaseController implements com.runzh
             } else {
                 terminalSplitPane.getItems().add(agentWorkspaceHost);
             }
-            agentWorkspaceHost.setPrefWidth(agentMode == AgentMode.DRAWER ? javafx.scene.layout.Region.USE_COMPUTED_SIZE : OVERLAY_AGENT_WIDTH);
-            agentWorkspaceHost.setMaxWidth(agentMode == AgentMode.DRAWER ? Double.MAX_VALUE : OVERLAY_AGENT_WIDTH);
+            if (agentMode == AgentMode.OVERLAY) {
+                double width = clampAgentWidth(LAYOUT_PREFS.getDouble(OVERLAY_WIDTH_KEY, OVERLAY_AGENT_WIDTH));
+                agentWorkspaceHost.setPrefWidth(width);
+                agentWorkspaceHost.setMaxWidth(width);
+            } else {
+                double saved = LAYOUT_PREFS.getDouble(DRAWER_WIDTH_KEY, -1);
+                if (saved > 0) {
+                    double width = clampAgentWidth(saved);
+                    agentWorkspaceHost.setPrefWidth(width);
+                    agentWorkspaceHost.setMaxWidth(width);
+                } else {
+                    agentWorkspaceHost.setPrefWidth(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+                    agentWorkspaceHost.setMaxWidth(Double.MAX_VALUE);
+                }
+            }
         }
+    }
+
+    /** Agent 面板的有效宽度：优先取已设置的约束宽度（布局未完成时也是真实意图），避免模式切换后的旧实际宽度残留。 */
+    private double effectiveAgentWidth() {
+        double pref = agentWorkspaceHost.getPrefWidth();
+        if (pref > 0) return pref;
+        double actual = agentWorkspaceHost.getWidth();
+        return actual > 1 ? actual : OVERLAY_AGENT_WIDTH;
+    }
+
+    private double clampAgentWidth(double width) {
+        double max = terminalStack != null && terminalStack.getWidth() > 0
+                ? Math.max(MIN_AGENT_WIDTH + 40, terminalStack.getWidth() - 240) : 900;
+        return Math.max(MIN_AGENT_WIDTH, Math.min(max, width));
+    }
+
+    /** overlay/drawer 左缘拖拽：SPLIT 由分隔条负责。 */
+    private void installAgentResize() {
+        if (agentWorkspaceHost == null) return;
+        agentWorkspaceHost.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+            if (agentResizing || agentMode == AgentMode.SPLIT || agentDetached
+                    || event.getButton() != MouseButton.PRIMARY
+                    || !agentWorkspaceHost.isVisible() || event.getX() > RESIZE_EDGE) return;
+            agentResizing = true;
+            agentResizeStartX = event.getScreenX();
+            agentResizeStartWidth = effectiveAgentWidth();
+            event.consume();
+        });
+        agentWorkspaceHost.addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> {
+            if (!agentResizing) return;
+            double width = clampAgentWidth(agentResizeStartWidth - (event.getScreenX() - agentResizeStartX));
+            agentWorkspaceHost.setPrefWidth(width);
+            agentWorkspaceHost.setMaxWidth(width);
+            event.consume();
+        });
+        agentWorkspaceHost.addEventFilter(MouseEvent.MOUSE_RELEASED, event -> {
+            if (!agentResizing) return;
+            agentResizing = false;
+            persistAgentPanelWidth();
+            event.consume();
+        });
+        agentWorkspaceHost.addEventFilter(MouseEvent.MOUSE_MOVED, event -> {
+            boolean edge = !agentDetached && agentMode != AgentMode.SPLIT
+                    && agentWorkspaceHost.isVisible() && event.getX() <= RESIZE_EDGE;
+            agentWorkspaceHost.setCursor(edge ? Cursor.H_RESIZE : Cursor.DEFAULT);
+        });
+    }
+
+    private void persistAgentPanelWidth() {
+        double width = effectiveAgentWidth();
+        if (width <= 0) return;
+        LAYOUT_PREFS.putDouble(agentMode == AgentMode.OVERLAY ? OVERLAY_WIDTH_KEY : DRAWER_WIDTH_KEY, width);
     }
 
     private void applyAgentWorkspaceVisibility() {
@@ -251,6 +344,7 @@ public class TerminalPanelController extends BaseController implements com.runzh
     /** 终端内 Agent 开关：唯一主 Agent（右侧聊天默认关） */
     @FXML
     void toggleAgentWorkspace() {
+        if (agentDetached) { dockAgentWorkspace(false); return; }
         boolean open = !(agentWorkspaceHost != null && agentWorkspaceHost.isVisible());
         if (agentWorkspaceHost != null) {
             agentWorkspaceHost.setVisible(open);
@@ -266,12 +360,118 @@ public class TerminalPanelController extends BaseController implements com.runzh
 
     /** 打开终端内 Agent（供 Agent 菜单与审批定位入口使用） */
     public void showAgentWorkspace() {
+        if (agentDetached) { bringAgentStageToFront(); return; }
         if (agentWorkspaceHost != null && !agentWorkspaceHost.isVisible()) {
             toggleAgentWorkspace();
         } else if (agentWorkspaceHost != null) {
             syncAgentWorkspaceToggle(agentWorkspaceHost.isVisible());
             if (agentWorkspaceController != null && terminalTabPane != null)
                 agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
+        }
+    }
+
+    /** Agent 工作区弹出为独立窗口 / 返回主面板；独立窗口非模态，终端与文件操作不受影响。 */
+    @FXML
+    void popOutAgentWorkspace() {
+        if (agentDetached) dockAgentWorkspace(true);
+        else detachAgentWorkspace();
+    }
+
+    private void detachAgentWorkspace() {
+        if (agentWorkspaceHost == null || agentDetached) return;
+        if (terminalSplitPane != null) terminalSplitPane.getItems().remove(agentWorkspaceHost);
+        if (terminalStack != null) terminalStack.getChildren().remove(agentWorkspaceHost);
+        // 解除 overlay 固定的宽度约束，让独立窗口可自由拉伸
+        agentWorkspaceHost.setPrefWidth(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+        agentWorkspaceHost.setMaxWidth(javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+        agentWorkspaceHost.getStyleClass().remove("agent-overlay");
+        resetFileDrawerConstraints();
+        agentWorkspaceHost.setVisible(true);
+        agentWorkspaceHost.setManaged(true);
+        Stage stage = new Stage();
+        stage.initModality(Modality.NONE);
+        stage.setTitle(I18n.tr("workbench.agent.window.title"));
+        double width = Math.max(MIN_AGENT_WIDTH, LAYOUT_PREFS.getDouble(AGENT_WINDOW_WIDTH_KEY, DEFAULT_AGENT_WINDOW_WIDTH));
+        double height = Math.max(360, LAYOUT_PREFS.getDouble(AGENT_WINDOW_HEIGHT_KEY, DEFAULT_AGENT_WINDOW_HEIGHT));
+        Scene scene = new Scene(agentWorkspaceHost, width, height);
+        var themeManager = com.runzhi.aishell.common.util.ThemeManager.getInstance();
+        for (String stylesheet : themeManager.getStylesheetsFor(themeManager.getCurrentTheme())) {
+            if (stylesheet != null) scene.getStylesheets().add(stylesheet);
+        }
+        stage.setScene(scene);
+        stage.setMinWidth(MIN_AGENT_WIDTH);
+        stage.setMinHeight(360);
+        double x = LAYOUT_PREFS.getDouble(AGENT_WINDOW_X_KEY, -1);
+        double y = LAYOUT_PREFS.getDouble(AGENT_WINDOW_Y_KEY, -1);
+        if (x > 0 && y > 0) { stage.setX(x); stage.setY(y); }
+        stage.setOnCloseRequest(event -> { event.consume(); dockAgentWorkspace(true); });
+        stage.setOnHidden(event -> persistAgentWindowBounds());
+        agentStage = stage;
+        agentDetached = true;
+        updatePopOutButton();
+        syncAgentWorkspaceToggle(true);
+        stage.show();
+        if (agentWorkspaceController != null && terminalTabPane != null)
+            agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
+    }
+
+    /** 收回独立窗口；keepOpen 决定工作区回到主面板后是否保持展开。 */
+    private void dockAgentWorkspace(boolean keepOpen) {
+        Stage stage = agentStage;
+        if (stage == null) return;
+        persistAgentWindowBounds();
+        agentStage = null;
+        agentDetached = false;
+        stage.setOnCloseRequest(null);
+        stage.hide();
+        stage.setScene(new Scene(new Group()));   // 释放 host 的场景根，再挂回主面板
+        agentWorkspaceHost.setVisible(keepOpen);
+        agentWorkspaceHost.setManaged(keepOpen);
+        LAYOUT_PREFS.putBoolean(AGENT_OPEN_KEY, keepOpen);
+        applyAgentPlacement();
+        updatePopOutButton();
+        syncAgentWorkspaceToggle(keepOpen);
+        if (keepOpen && agentWorkspaceController != null && terminalTabPane != null)
+            agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
+    }
+
+    private void bringAgentStageToFront() {
+        Stage stage = agentStage;
+        if (stage == null) return;
+        if (stage.isIconified()) stage.setIconified(false);
+        stage.toFront();
+        stage.requestFocus();
+        if (agentWorkspaceController != null && terminalTabPane != null)
+            agentWorkspaceController.showTab(terminalTabPane.getSelectionModel().getSelectedItem());
+    }
+
+    private void persistAgentWindowBounds() {
+        Stage stage = agentStage;
+        if (stage == null) return;
+        LAYOUT_PREFS.putDouble(AGENT_WINDOW_WIDTH_KEY, stage.getWidth());
+        LAYOUT_PREFS.putDouble(AGENT_WINDOW_HEIGHT_KEY, stage.getHeight());
+        LAYOUT_PREFS.putDouble(AGENT_WINDOW_X_KEY, stage.getX());
+        LAYOUT_PREFS.putDouble(AGENT_WINDOW_Y_KEY, stage.getY());
+    }
+
+    private void updatePopOutButton() {
+        if (btnPopOutAgentWorkspace == null) return;
+        String tip = I18n.tr(agentDetached ? "workbench.agent.dock" : "workbench.agent.popOut.tip");
+        btnPopOutAgentWorkspace.setText(agentDetached ? "↙" : "↗");
+        btnPopOutAgentWorkspace.setAccessibleText(I18n.tr(agentDetached ? "workbench.agent.dock" : "workbench.agent.popOut"));
+        if (btnPopOutAgentWorkspace.getTooltip() == null) btnPopOutAgentWorkspace.setTooltip(new Tooltip());
+        btnPopOutAgentWorkspace.getTooltip().setText(tip);
+    }
+
+    /** 弹出 overlay 前解除文件抽屉宽度约束，避免残留旧绑定。 */
+    private void resetFileDrawerConstraints() {
+        if (terminalTabPane == null) return;
+        for (Tab tab : terminalTabPane.getTabs()) {
+            Node body = findInTabTree(tab, node -> node.getStyleClass().contains("file-drawer-body"));
+            if (body instanceof javafx.scene.layout.Region region) {
+                region.maxWidthProperty().unbind();
+                region.setMaxWidth(Double.MAX_VALUE);
+            }
         }
     }
 
@@ -617,6 +817,8 @@ public class TerminalPanelController extends BaseController implements com.runzh
 
         // Agent 默认收起，终端优先；用户偏好与拖动比例仍原样恢复。
         applyAgentWorkspaceVisibility();
+        installAgentResize();
+        updatePopOutButton();
 
         // Agent 会话状态变化 → 更新目标标签角标（运行/待审批归属到具体 tab）
         agentStateSubscription = AgentSessionTracker.getInstance().addListener(state -> Platform.runLater(() -> {
@@ -626,7 +828,7 @@ public class TerminalPanelController extends BaseController implements com.runzh
         // 响应式布局：≥1440 三栏分栏；1200–1439 Agent 为 overlay，不压缩终端
         watchWorkspaceWidth();
         if (terminalStack != null) terminalStack.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, event -> {
-            if (agentMode != AgentMode.OVERLAY || agentWorkspaceHost == null || !agentWorkspaceHost.isVisible()) return;
+            if (agentDetached || agentMode != AgentMode.OVERLAY || agentWorkspaceHost == null || !agentWorkspaceHost.isVisible()) return;
             Node node = event.getTarget() instanceof Node target ? target : null;
             while (node != null && node != agentWorkspaceHost) node = node.getParent();
             if (node == null) toggleAgentWorkspace();
@@ -742,6 +944,11 @@ public class TerminalPanelController extends BaseController implements com.runzh
             com.runzhi.aishell.common.util.ParameterManager.getInstance().put("current_active_tab", newTab.getId(), 5000);
             // 仅在文件抽屉可见时刷新，避免切换标签时列表反复刷新
             refreshFileManagerForTab(newTab);
+            // 切回终端时若该标签没有运行中的 Agent 会话，把焦点还给命令输入框，
+            // 避免用户想自行输入命令时键入无效（GitHub #7）
+            if (!AgentSessionTracker.getInstance().isRunning(newTab.getId())) {
+                com.runzhi.aishell.terminal.InteractiveTerminalView.restoreTerminalInput(newTab);
+            }
         }
     }
 
@@ -785,27 +992,9 @@ public class TerminalPanelController extends BaseController implements com.runzh
             com.runzhi.aishell.common.util.ParameterManager.getInstance().remove("connection_params");
         } else {
             params = terminalConnectionService.showConnectionSelectionDialog();
+            // 对话框选中的连接同样走统一入口：同连接已开标签则复用，否则新建并连接
             if (params != null) {
-                Tab newTab = createConfiguredTerminalTab(params);
-                String tabId = newTab.getId();
-
-                Parent combinedView = createTerminalAndFileManagerViewForTab(tabId);
-                newTab.setContent(combinedView);
-
-                terminalTabPane.getTabs().add(newTab);
-                terminalTabPane.getSelectionModel().select(newTab);
-
-                ConnectionParams finalParams = params;
-                Platform.runLater(() -> {
-                    PauseTransition pause = new PauseTransition(Duration.millis(200));
-                    pause.setOnFinished(_ -> {
-                        setupTabTerminal(newTab, tabId);
-                        PauseTransition connectDelay = new PauseTransition(Duration.millis(150));
-                        connectDelay.setOnFinished(_ -> establishSSHConnectionForTab(tabId, finalParams, newTab));
-                        connectDelay.play();
-                    });
-                    pause.play();
-                });
+                createNewTerminalTabWithParams(params);
             }
         }
     }
@@ -858,9 +1047,21 @@ public class TerminalPanelController extends BaseController implements com.runzh
     }
 
     /**
-     * 使用指定的连接参数创建新的终端Tab
+     * 使用指定的连接参数创建新的终端Tab。
+     * <p>
+     * 同一连接（user@host:port）已有标签时直接复用：选中并聚焦既有标签，
+     * 不再重复创建；若该标签的连接已断开，则在原标签内原地重连。
      */
     public void createNewTerminalTabWithParams(ConnectionParams params) {
+        Tab existing = findTabForConnection(params);
+        if (existing != null) {
+            terminalTabPane.getSelectionModel().select(existing);
+            if (!isTabConnectionAlive(existing)) {
+                log.info("复用已开标签 {} 并原地重连: {}", existing.getId(), connectionKeyOf(params));
+                Platform.runLater(() -> establishSSHConnectionForTab(existing.getId(), params, existing));
+            }
+            return;
+        }
         Tab newTab = createConfiguredTerminalTab(params);
         String tabId = newTab.getId();
 
@@ -1029,6 +1230,18 @@ public class TerminalPanelController extends BaseController implements com.runzh
                 + '@' + params.getHost() + ':' + params.getPort();
     }
 
+    /** 已开标签的 SSH 连接是否仍然存活（无连接信息或已断开均返回 false）。 */
+    private boolean isTabConnectionAlive(Tab tab) {
+        if (tab == null || tab.getId() == null || sshService == null) return false;
+        try {
+            var connection = sshService.getTabConnection(tab.getId());
+            return connection != null && connection.isConnected();
+        } catch (Exception e) {
+            log.debug("读取标签 {} 的连接状态失败: {}", tab.getId(), e.getMessage());
+            return false;
+        }
+    }
+
     /** 找到与该连接对应的已开标签（user@host:port 匹配）；没有返回 null。 */
     public Tab findTabForConnection(ConnectionParams params) {
         String key = connectionKeyOf(params);
@@ -1094,7 +1307,43 @@ public class TerminalPanelController extends BaseController implements com.runzh
         newTab.setId(tabId);
         rememberConnection(newTab, params);
         protectTabClosure(newTab);
+        installTabContextMenu(newTab);
         return newTab;
+    }
+
+    /**
+     * 标签右键菜单：重命名（名称自定义）与关闭。
+     * <p>
+     * 重命名更新显示文本与 BASE_TITLE_KEY，Agent 角标逻辑基于 BASE_TITLE_KEY 拼接，
+     * 重命名后角标仍能正确显示/隐藏。
+     */
+    private void installTabContextMenu(Tab tab) {
+        if (tab == null) return;
+        MenuItem renameItem = new MenuItem("重命名标签");
+        renameItem.setOnAction(event -> renameTab(tab));
+        MenuItem closeItem = new MenuItem("关闭标签");
+        closeItem.setOnAction(event -> closeTab(tab));
+        tab.setContextMenu(new ContextMenu(renameItem, closeItem));
+    }
+
+    /** 弹出重命名对话框并应用新名称；空名取消。 */
+    private void renameTab(Tab tab) {
+        if (tab == null) return;
+        Object base = tab.getProperties().get(BASE_TITLE_KEY);
+        TextInputDialog dialog = new TextInputDialog(base instanceof String baseTitle ? baseTitle : tab.getText());
+        dialog.setTitle("重命名标签");
+        dialog.setHeaderText("设置该终端标签的显示名称");
+        UITools.setDialogCSS(dialog.getDialogPane());
+        dialog.showAndWait().ifPresent(name -> applyTabRename(tab, name.strip()));
+    }
+
+    /** 应用标签重命名：同时更新显示文本与基准标题（Agent 角标以此拼接）；空白名称忽略。 */
+    void applyTabRename(Tab tab, String name) {
+        if (tab == null || name == null || name.isBlank()) return;
+        tab.getProperties().put(BASE_TITLE_KEY, name);
+        boolean agentActive = AgentSessionTracker.getInstance().isRunning(tab.getId())
+                || AgentSessionTracker.getInstance().pendingApprovals(tab.getId()) > 0;
+        tab.setText(agentActive ? name + " · Agent" : name);
     }
 
     /**
@@ -1111,7 +1360,13 @@ public class TerminalPanelController extends BaseController implements com.runzh
                         + "请先在 Agent 工作区批准或拒绝，或停止该任务后再关闭。");
             }
         });
-        tab.setOnClosed(event -> AgentSessionTracker.getInstance().clear(tab.getId()));
+        tab.setOnClosed(event -> {
+            AgentSessionTracker.getInstance().clear(tab.getId());
+            // 标签关闭时立即保存该连接的 Agent 历史，避免最近对话内容丢失（GitHub #10）
+            if (agentWorkspaceController != null) {
+                agentWorkspaceController.persistHistoryOnTabClosed();
+            }
+        });
     }
 
     /**
@@ -1347,6 +1602,15 @@ public class TerminalPanelController extends BaseController implements com.runzh
     @Override public void onWindowClosing() {
         if (disposed) return;
         disposed = true;
+        if (agentStage != null) {   // 主窗口关闭时一并收起独立窗口，任务状态由控制器层保留
+            Stage stage = agentStage;
+            agentStage = null;
+            agentDetached = false;
+            stage.setOnCloseRequest(null);
+            stage.setOnHidden(null);
+            stage.hide();
+            stage.setScene(new Scene(new Group()));
+        }
         fileAreaStateListener = null;
         if (observedFileAreaBody != null) {
             observedFileAreaBody.managedProperty().removeListener(fileAreaManagedListener);

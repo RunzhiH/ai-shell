@@ -21,8 +21,11 @@ import java.util.Set;
  * callers never provide host, port, user name, password, or key material.
  * <p>
  * Every mutating tool ({@code execute_command}, write/delete/rename/mkdir) is gated behind a
- * mandatory human approval before it touches the remote host; read-only inspection tools run
- * directly. Approval outcomes are written to the audit trail.
+ * human approval before it touches the remote host; read-only inspection tools run directly.
+ * When the session's auto-approval switch is on ({@link AgentAutoApprovePolicy}), low/medium-risk
+ * file-write tools and low-risk read-only / low/medium-risk safe write commands run without a
+ * prompt; deletes, high-risk commands, sudo, service/process/package changes and unrecognised
+ * commands still require an explicit decision. Approval outcomes are written to the audit trail.
  */
 public final class AgentToolRegistry {
     private static final int MAX_EXEC_OUTPUT = 64 * 1024;
@@ -120,8 +123,16 @@ public final class AgentToolRegistry {
         if (MUTATING_TOOLS.contains(toolName)) {
             CommandRisk risk = riskOf(toolName, arguments);
             String summary = describe(toolName, arguments);
-            AgentToolResult rejected = awaitApproval(tabId, risk, summary);
-            if (rejected != null) return rejected;
+            if (canAutoApprove(tabId, toolName, arguments, risk)
+                    && sessionTool.approvalTarget(tabId).getAsBoolean()) {
+                // 低风险只读检查：开关打开时不再打断用户，但仍写入审计并保留可见记录。
+                AgentAuditLogger.getInstance().record("tool_auto_approved", tabId, risk, summary, "approved");
+                AgentActivityBus.publish(tabId, AgentActivityBus.Kind.TOOL,
+                        "自动批准（" + risk.label() + "）：" + summary);
+            } else {
+                AgentToolResult rejected = awaitApproval(tabId, risk, summary);
+                if (rejected != null) return rejected;
+            }
         }
 
         try {
@@ -309,6 +320,19 @@ public final class AgentToolRegistry {
         };
         CommandRisk risk = riskOf(toolName, args);
         AgentAuditLogger.getInstance().record(event, tabId, risk, subject, result.success() ? "success" : "error");
+    }
+
+    /**
+     * 自动批准覆盖：低/中风险的文件写入、建目录、重命名工具，以及通过安全写入白名单的
+     * {@code execute_command}。删除、高危命令、sudo、服务/进程/包管理等仍走人工审批。
+     */
+    private static boolean canAutoApprove(String tabId, String toolName,
+                                          Map<String, String> arguments, CommandRisk risk) {
+        if ("execute_command".equals(toolName)) {
+            String command = arguments == null ? "" : arguments.getOrDefault("command", "");
+            return AgentAutoApprovePolicy.canAutoApproveCommand(tabId, risk, command);
+        }
+        return AgentAutoApprovePolicy.canAutoApproveTool(tabId, toolName, risk);
     }
 
     /**

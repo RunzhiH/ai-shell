@@ -268,6 +268,166 @@ class AgentToolRegistryTest {
         assertEquals(List.of(CommandRisk.HIGH), seen, "rm -rf must be proposed as high risk");
     }
 
+    @Test
+    void lowRiskReadOnlyCommandSkipsApprovalWhenAutoApproveEnabled() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult result = registry.execute("execute_command", "tab-auto", Map.of("command", "df -h"));
+
+            assertTrue(result.success());
+            assertTrue(gated.isEmpty(), "read-only low-risk command must not open an approval card");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto");
+        }
+    }
+
+    @Test
+    void autoApproveSwitchOffKeepsReadOnlyCommandGated() {
+        AgentAutoApprovePolicy.clear("tab-auto-off");
+        List<CommandRisk> gated = new ArrayList<>();
+        AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+            gated.add(risk);
+            return true;
+        });
+
+        AgentToolResult result = registry.execute("execute_command", "tab-auto-off", Map.of("command", "df -h"));
+
+        assertTrue(result.success());
+        assertEquals(List.of(CommandRisk.LOW), gated, "switch off must keep the human decision");
+    }
+
+    @Test
+    void mediumRiskCommandStillRequiresApprovalWhenAutoApproveEnabled() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto-medium", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult result = registry.execute("execute_command", "tab-auto-medium",
+                    Map.of("command", "rm /srv/app/old.txt"));
+
+            assertFalse(result.success());
+            assertEquals(List.of(CommandRisk.MEDIUM), gated, "deletions stay manual even at medium risk");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto-medium");
+        }
+    }
+
+    @Test
+    void highRiskCommandIsNeverAutoApproved() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto-high", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult result = registry.execute("execute_command", "tab-auto-high",
+                    Map.of("command", "rm -rf /srv/old"));
+
+            assertFalse(result.success());
+            assertEquals(List.of(CommandRisk.HIGH), gated, "high-risk commands must stay manual");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto-high");
+        }
+    }
+
+    @Test
+    void lowRiskWriteCommandSkipsApprovalWhenAutoApproveEnabled() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto-mkdir", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult result = registry.execute("execute_command", "tab-auto-mkdir",
+                    Map.of("command", "mkdir -p /srv/app/new"));
+
+            assertTrue(result.success());
+            assertTrue(gated.isEmpty(), "low-risk write commands must not open an approval card");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto-mkdir");
+        }
+    }
+
+    @Test
+    void writeToolsSkipApprovalWhenAutoApproveEnabled() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto-write", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult directory = registry.execute("create_remote_directory", "tab-auto-write",
+                    Map.of("path", "/srv/app/new"));
+            AgentToolResult file = registry.execute("write_remote_text_file", "tab-auto-write",
+                    Map.of("path", "/srv/app/new/note.txt", "content", "hello"));
+            AgentToolResult rename = registry.execute("rename_remote_path", "tab-auto-write",
+                    Map.of("from", "/srv/app/new/note.txt", "to", "/srv/app/new/note-2.txt"));
+
+            assertTrue(directory.success());
+            assertTrue(file.success());
+            assertTrue(rename.success());
+            assertTrue(gated.isEmpty(), "medium-risk file writes must be auto-approved");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto-write");
+        }
+    }
+
+    @Test
+    void deleteToolStillRequiresApprovalWhenAutoApproveEnabled() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto-delete", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult result = registry.execute("delete_remote_path", "tab-auto-delete",
+                    Map.of("path", "/srv/app/old", "directory", "true"));
+
+            assertFalse(result.success());
+            assertEquals(List.of(CommandRisk.HIGH), gated, "high-risk deletes always need a human decision");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto-delete");
+        }
+    }
+
+    @Test
+    void privilegedCommandStillRequiresApprovalWhenAutoApproveEnabled() {
+        AgentAutoApprovePolicy.setEnabled("tab-auto-sudo", true);
+        try {
+            List<CommandRisk> gated = new ArrayList<>();
+            AgentToolRegistry registry = new AgentToolRegistry(new FakeSessionTool(true), (sessionId, risk, summary) -> {
+                gated.add(risk);
+                return false;
+            });
+
+            AgentToolResult result = registry.execute("execute_command", "tab-auto-sudo",
+                    Map.of("command", "sudo ls"));
+
+            assertFalse(result.success());
+            assertEquals(List.of(CommandRisk.MEDIUM), gated, "privilege escalation always needs a human decision");
+        } finally {
+            AgentAutoApprovePolicy.clear("tab-auto-sudo");
+        }
+    }
+
     private record FakeSessionTool(boolean connected) implements AgentSessionTool {
         @Override public boolean isConnected(String sessionId) { return connected; }
         @Override public String workingDirectory(String sessionId) { return "/srv/app"; }

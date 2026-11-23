@@ -4,91 +4,261 @@
 <?import javafx.scene.layout.*?>
 <VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.runzhi.aishell.controller.MonitorPanelController" styleClass="monitor-panel">
-    <HBox alignment="CENTER_LEFT" spacing="12">
-        <VBox spacing="4"><Label text="主机监控" styleClass="page-title"/><Label text="当前连接的资源使用情况与趋势" styleClass="page-description"/></VBox>
+    <!-- 统一头部：主机监控 / 当前主机 / 连接状态 / 最后更新时间；右侧采样间隔、暂停、立即刷新 -->
+    <HBox alignment="CENTER_LEFT" spacing="12" styleClass="monitor-header-bar">
+        <VBox spacing="4">
+            <Label text="主机监控" styleClass="page-title"/>
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Label fx:id="hostLabel" text="当前主机：—" styleClass="text-secondary"/>
+                <Label fx:id="connectionStateLabel" text="● 未连接" styleClass="monitor-status-chip"/>
+                <Label fx:id="lastUpdateLabel" text="最后更新：—" styleClass="text-secondary"/>
+            </HBox>
+        </VBox>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button fx:id="refreshBtn" text="刷新数据" onAction="#refreshMonitoring" styleClass="secondary-button"/>
+        <Label text="采样间隔" styleClass="text-secondary"/>
+        <ComboBox fx:id="intervalComboBox" prefWidth="110"/>
+        <Button fx:id="pauseResumeButton" text="暂停" onAction="#toggleMonitoringPause" styleClass="secondary-button"/>
+        <Button fx:id="refreshBtn" text="立即刷新" onAction="#refreshMonitoring" styleClass="secondary-button"/>
     </HBox>
-    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" VBox.vgrow="ALWAYS">
-        <VBox spacing="20">
-            <TilePane hgap="16" vgap="16" prefColumns="3" prefTileWidth="260" prefTileHeight="140">
-<VBox spacing="16" styleClass="metric-card"><Label text="CPU 使用率" styleClass="text-secondary"/><Label fx:id="cpuPercentLabel" text="—" styleClass="metric-value"/><ProgressBar fx:id="cpuProgress" progress="0" maxWidth="Infinity"/></VBox>
-<VBox spacing="16" styleClass="metric-card"><Label text="内存使用率" styleClass="text-secondary"/><Label fx:id="memoryPercentLabel" text="—" styleClass="metric-value"/><ProgressBar fx:id="memoryProgress" progress="0" maxWidth="Infinity"/></VBox>
-<VBox spacing="16" styleClass="metric-card"><Label text="磁盘使用率" styleClass="text-secondary"/><Label fx:id="diskPercentLabel" text="—" styleClass="metric-value"/><ProgressBar fx:id="diskProgress" progress="0" maxWidth="Infinity"/></VBox>
-<VBox spacing="16" styleClass="metric-card"><Label text="系统负载" styleClass="text-secondary"/><Label fx:id="loadLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
-<VBox spacing="16" styleClass="metric-card"><Label text="网络上传" styleClass="text-secondary"/><Label fx:id="netUpLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
-<VBox spacing="16" styleClass="metric-card"><Label text="网络下载" styleClass="text-secondary"/><Label fx:id="netDownLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
-<VBox spacing="16" styleClass="metric-card"><Label text="网络连接" styleClass="text-secondary"/><Label fx:id="connectionsLabel" text="—" wrapText="true" styleClass="monitor-value"/></VBox>
-</TilePane>
-<TitledPane text="详细监控" collapsible="true" expanded="false" VBox.vgrow="ALWAYS" styleClass="detailed-monitor">
-            <content>
-                <VBox spacing="10" styleClass="chart-container">
-                    <children>
-                        <!-- CPU图表 -->
-                        <VBox spacing="5">
-                            <children>
-                                <Label text="CPU使用率趋势" styleClass="chart-title" />
-                                <LineChart fx:id="cpuChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
-                                    <xAxis>
-                                        <NumberAxis fx:id="cpuXAxis" label="时间" tickLabelsVisible="false"
-                                                    minorTickVisible="false"/>
-                                    </xAxis>
-                                    <yAxis>
-                                        <NumberAxis fx:id="cpuYAxis" label="百分比" upperBound="100"/>
-                                    </yAxis>
-                                </LineChart>
-                            </children>
-                        </VBox>
 
-                        <!-- 内存图表 -->
-                        <VBox spacing="5">
-                            <children>
-                                <Label text="内存使用率趋势" styleClass="chart-title" />
-                                <LineChart fx:id="memoryChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
-                                    <xAxis>
-                                        <NumberAxis fx:id="memoryXAxis" label="时间" tickLabelsVisible="false"
-                                                    minorTickVisible="false"/>
-                                    </xAxis>
-                                    <yAxis>
-                                        <NumberAxis fx:id="memoryYAxis" label="百分比" upperBound="100"/>
-                                    </yAxis>
-                                </LineChart>
-                            </children>
+    <!-- 四视图切换：概览 / 磁盘 I/O / 进程 / 网络接口 -->
+    <TabPane fx:id="monitorTabPane" VBox.vgrow="ALWAYS" styleClass="monitor-tab-pane">
+        <!-- ============================ 概览 ============================ -->
+        <Tab fx:id="overviewTab" text="概览" closable="false">
+            <ScrollPane fitToWidth="true" hbarPolicy="NEVER" VBox.vgrow="ALWAYS">
+                <VBox spacing="20">
+                    <TilePane hgap="16" vgap="16" prefColumns="4" prefTileWidth="230" prefTileHeight="120">
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="CPU" styleClass="text-secondary"/>
+                            <Label fx:id="cpuPercentLabel" text="—" styleClass="metric-value"/>
+                            <ProgressBar fx:id="cpuProgress" progress="0" maxWidth="Infinity"/>
                         </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="内存" styleClass="text-secondary"/>
+                            <Label fx:id="memoryPercentLabel" text="—" styleClass="metric-value"/>
+                            <ProgressBar fx:id="memoryProgress" progress="0" maxWidth="Infinity"/>
+                        </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="磁盘容量" styleClass="text-secondary"/>
+                            <Label fx:id="diskPercentLabel" text="—" styleClass="metric-value"/>
+                            <ProgressBar fx:id="diskProgress" progress="0" maxWidth="Infinity"/>
+                        </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="网络收发" styleClass="text-secondary"/>
+                            <Label fx:id="netRateLabel" text="—" styleClass="metric-value" wrapText="true"/>
+                            <Label fx:id="netScopeLabel" text="统计范围：—" styleClass="text-secondary" wrapText="true"/>
+                        </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="系统负载" styleClass="text-secondary"/>
+                            <Label fx:id="loadLabel" text="—" wrapText="true" styleClass="monitor-value"/>
+                        </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="运行时间" styleClass="text-secondary"/>
+                            <Label fx:id="uptimeLabel" text="—" wrapText="true" styleClass="monitor-value"/>
+                        </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="内存 / Swap" styleClass="text-secondary"/>
+                            <Label fx:id="memoryLabel" text="—" wrapText="true" styleClass="monitor-value"/>
+                            <Label fx:id="swapLabel" text="—" wrapText="true" styleClass="monitor-value"/>
+                        </VBox>
+                        <VBox spacing="10" styleClass="metric-card">
+                            <Label text="采样状态" styleClass="text-secondary"/>
+                            <Label fx:id="samplingStateLabel" text="—" wrapText="true" styleClass="monitor-value"/>
+                        </VBox>
+                    </TilePane>
 
-                        <!-- 磁盘图表 -->
-                        <VBox spacing="5">
-                            <children>
-                                <Label text="磁盘使用率趋势" styleClass="chart-title" />
-                                <LineChart fx:id="diskChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
-                                    <xAxis>
-                                        <NumberAxis fx:id="diskXAxis" label="时间" tickLabelsVisible="false"
-                                                    minorTickVisible="false"/>
-                                    </xAxis>
-                                    <yAxis>
-                                        <NumberAxis fx:id="diskYAxis" label="百分比" upperBound="100"/>
-                                    </yAxis>
-                                </LineChart>
-                            </children>
-                        </VBox>
+                    <HBox spacing="10" alignment="CENTER_LEFT" styleClass="view-toolbar">
+                        <Label text="资源趋势" styleClass="chart-title"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <ComboBox fx:id="trendRangeComboBox" prefWidth="120"/>
+                    </HBox>
 
-                        <!-- 网络图表 -->
-                        <VBox spacing="5">
-                            <children>
-                                <Label text="网络流量趋势" styleClass="chart-title" />
-                                <LineChart fx:id="networkChart" VBox.vgrow="ALWAYS" animated="false" minHeight="100">
-                                    <xAxis>
-                                        <NumberAxis fx:id="networkXAxis" label="时间" tickLabelsVisible="false"
-                                                    minorTickVisible="false"/>
-                                    </xAxis>
-                                    <yAxis>
-                                        <NumberAxis fx:id="networkYAxis" label="KB/s" upperBound="1000"/>
-                                    </yAxis>
-                                </LineChart>
-                            </children>
+                    <SplitPane orientation="HORIZONTAL" dividerPositions="0.5">
+                        <VBox spacing="5" minWidth="240">
+                            <Label text="CPU 使用率趋势" styleClass="chart-title"/>
+                            <LineChart fx:id="cpuChart" VBox.vgrow="ALWAYS" animated="false" minHeight="160">
+                                <xAxis><NumberAxis fx:id="cpuXAxis" label="时间" tickLabelsVisible="false" minorTickVisible="false"/></xAxis>
+                                <yAxis><NumberAxis fx:id="cpuYAxis" label="\%" upperBound="100"/></yAxis>
+                            </LineChart>
                         </VBox>
-                    </children>
+                        <VBox spacing="5" minWidth="240">
+                            <Label text="内存使用率趋势" styleClass="chart-title"/>
+                            <LineChart fx:id="memoryChart" VBox.vgrow="ALWAYS" animated="false" minHeight="160">
+                                <xAxis><NumberAxis fx:id="memoryXAxis" label="时间" tickLabelsVisible="false" minorTickVisible="false"/></xAxis>
+                                <yAxis><NumberAxis fx:id="memoryYAxis" label="\%" upperBound="100"/></yAxis>
+                            </LineChart>
+                        </VBox>
+                    </SplitPane>
+
+                    <SplitPane orientation="HORIZONTAL" dividerPositions="0.5">
+                        <VBox spacing="5" minWidth="240">
+                            <Label text="磁盘容量使用率趋势" styleClass="chart-title"/>
+                            <LineChart fx:id="diskChart" VBox.vgrow="ALWAYS" animated="false" minHeight="160">
+                                <xAxis><NumberAxis fx:id="diskXAxis" label="时间" tickLabelsVisible="false" minorTickVisible="false"/></xAxis>
+                                <yAxis><NumberAxis fx:id="diskYAxis" label="\%" upperBound="100"/></yAxis>
+                            </LineChart>
+                        </VBox>
+                        <VBox spacing="5" minWidth="240">
+                            <!-- 仅合计物理设备（排除分区/逻辑卷），避免同一 I/O 在不同层级重复累计 -->
+                            <Label text="磁盘 I/O 摘要" styleClass="chart-title"/>
+                            <TableView fx:id="overviewDiskTable" minHeight="160" styleClass="monitor-table">
+                                <columns>
+                                    <TableColumn fx:id="ovDiskDeviceColumn" text="设备" prefWidth="90"/>
+                                    <TableColumn fx:id="ovDiskReadColumn" text="读取" prefWidth="100"/>
+                                    <TableColumn fx:id="ovDiskWriteColumn" text="写入" prefWidth="100"/>
+                                    <TableColumn fx:id="ovDiskBusyColumn" text="繁忙" prefWidth="70"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+                    </SplitPane>
+
+                    <SplitPane orientation="HORIZONTAL" dividerPositions="0.5">
+                        <VBox spacing="5" minWidth="240">
+                            <Label text="资源占用较高的进程" styleClass="chart-title"/>
+                            <TableView fx:id="topProcessTable" minHeight="160" styleClass="monitor-table">
+                                <columns>
+                                    <TableColumn fx:id="topPidColumn" text="PID" prefWidth="70"/>
+                                    <TableColumn fx:id="topNameColumn" text="进程名" prefWidth="130"/>
+                                    <TableColumn fx:id="topCpuColumn" text="CPU%" prefWidth="70"/>
+                                    <TableColumn fx:id="topMemColumn" text="内存%" prefWidth="70"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+                        <VBox spacing="5" minWidth="240">
+                            <Label text="活跃网络接口" styleClass="chart-title"/>
+                            <TableView fx:id="activeInterfaceTable" minHeight="160" styleClass="monitor-table">
+                                <columns>
+                                    <TableColumn fx:id="aiNameColumn" text="接口" prefWidth="100"/>
+                                    <TableColumn fx:id="aiRxColumn" text="接收速率" prefWidth="110"/>
+                                    <TableColumn fx:id="aiTxColumn" text="发送速率" prefWidth="110"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+                    </SplitPane>
                 </VBox>
-            </content>
-        </TitledPane>
-</VBox></ScrollPane></VBox>
+            </ScrollPane>
+        </Tab>
+
+        <!-- ============================ 磁盘 I/O ============================ -->
+        <Tab fx:id="diskIoTab" text="磁盘 I/O" closable="false">
+            <VBox spacing="12" VBox.vgrow="ALWAYS">
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="view-toolbar">
+                    <!-- 块设备级别统计；文件系统容量属于不同口径，见概览页 -->
+                    <Label text="设备吞吐与 IOPS" styleClass="chart-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="diskScopeLabel" text="统计范围：—" styleClass="text-secondary"/>
+                </HBox>
+                <TableView fx:id="diskIoTable" VBox.vgrow="ALWAYS" minHeight="200" styleClass="monitor-table">
+                    <columns>
+                        <TableColumn fx:id="diskDeviceColumn" text="设备" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="diskReadRateColumn" text="读取速率" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="diskWriteRateColumn" text="写入速率" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="diskReadIopsColumn" text="读 IOPS" prefWidth="80" sortable="true"/>
+                        <TableColumn fx:id="diskWriteIopsColumn" text="写 IOPS" prefWidth="80" sortable="true"/>
+                        <TableColumn fx:id="diskLatencyColumn" text="平均请求耗时" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="diskBusyColumn" text="繁忙时间占比" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="diskLevelColumn" text="层级" prefWidth="110"/>
+                        <TableColumn fx:id="diskMountColumn" text="挂载点" prefWidth="130"/>
+                    </columns>
+                </TableView>
+                <SplitPane orientation="HORIZONTAL" dividerPositions="0.5" minHeight="180">
+                    <VBox spacing="5" minWidth="240">
+                        <Label text="吞吐趋势（选中设备）" styleClass="chart-title"/>
+                        <LineChart fx:id="diskThroughputChart" VBox.vgrow="ALWAYS" animated="false" minHeight="160">
+                            <xAxis><NumberAxis fx:id="diskThroughputXAxis" label="时间" tickLabelsVisible="false" minorTickVisible="false"/></xAxis>
+                            <yAxis><NumberAxis fx:id="diskThroughputYAxis" label="字节/秒" autoRanging="true"/></yAxis>
+                        </LineChart>
+                    </VBox>
+                    <VBox spacing="5" minWidth="240">
+                        <Label text="IOPS 趋势（选中设备）" styleClass="chart-title"/>
+                        <LineChart fx:id="diskIopsChart" VBox.vgrow="ALWAYS" animated="false" minHeight="160">
+                            <xAxis><NumberAxis fx:id="diskIopsXAxis" label="时间" tickLabelsVisible="false" minorTickVisible="false"/></xAxis>
+                            <yAxis><NumberAxis fx:id="diskIopsYAxis" label="操作/秒" autoRanging="true"/></yAxis>
+                        </LineChart>
+                    </VBox>
+                </SplitPane>
+                <VBox spacing="6" styleClass="metric-card">
+                    <Label text="设备详情" styleClass="chart-title"/>
+                    <Label fx:id="diskDetailLabel" text="选择设备查看详情" wrapText="true" styleClass="monitor-value"/>
+                </VBox>
+            </VBox>
+        </Tab>
+
+        <!-- ============================ 进程 ============================ -->
+        <Tab fx:id="processTab" text="进程" closable="false">
+            <VBox spacing="12" VBox.vgrow="ALWAYS">
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="view-toolbar">
+                    <TextField fx:id="processSearchField" promptText="搜索进程名 / PID / 用户" prefWidth="220"/>
+                    <ComboBox fx:id="processStateFilter" prefWidth="130"/>
+                    <CheckBox fx:id="processAutoRefreshCheckBox" text="自动刷新" selected="true"/>
+                    <MenuButton text="列" styleClass="secondary-button">
+                        <items>
+                            <CheckMenuItem fx:id="showPpidMenuItem" text="PPID"/>
+                            <CheckMenuItem fx:id="showThreadsMenuItem" text="线程数"/>
+                            <CheckMenuItem fx:id="showStartMenuItem" text="启动时间"/>
+                        </items>
+                    </MenuButton>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button text="复制 PID" onAction="#copySelectedPid" styleClass="secondary-button"/>
+                    <Button text="复制命令行" onAction="#copySelectedCommandLine" styleClass="secondary-button"/>
+                </HBox>
+                <TableView fx:id="processTable" VBox.vgrow="ALWAYS" minHeight="220" styleClass="monitor-table">
+                    <columns>
+                        <TableColumn fx:id="procPidColumn" text="PID" prefWidth="70" sortable="true"/>
+                        <TableColumn fx:id="procNameColumn" text="进程名" prefWidth="150" sortable="true"/>
+                        <TableColumn fx:id="procUserColumn" text="用户" prefWidth="90" sortable="true"/>
+                        <!-- CPU% 口径：单核满载 100%，允许多线程进程超过 100% -->
+                        <TableColumn fx:id="procCpuColumn" text="CPU%" prefWidth="150" sortable="true"/>
+                        <TableColumn fx:id="procMemColumn" text="内存%" prefWidth="80" sortable="true"/>
+                        <TableColumn fx:id="procRssColumn" text="RSS" prefWidth="90" sortable="true"/>
+                        <TableColumn fx:id="procStateColumn" text="状态" prefWidth="70" sortable="true"/>
+                        <TableColumn fx:id="procElapsedColumn" text="运行时长" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="procPpidColumn" text="PPID" prefWidth="70" visible="false" sortable="true"/>
+                        <TableColumn fx:id="procThreadsColumn" text="线程数" prefWidth="80" visible="false" sortable="true"/>
+                        <TableColumn fx:id="procStartColumn" text="启动时间" prefWidth="160" visible="false" sortable="true"/>
+                    </columns>
+                </TableView>
+                <VBox spacing="6" styleClass="metric-card" minHeight="120">
+                    <Label text="进程详情" styleClass="chart-title"/>
+                    <!-- 工作目录属于较重采集，选中进程后按需加载（远端能力不足时降级） -->
+                    <Label fx:id="processDetailLabel" text="选择进程查看详情" wrapText="true" styleClass="monitor-value"/>
+                </VBox>
+            </VBox>
+        </Tab>
+
+        <!-- ============================ 网络接口 ============================ -->
+        <Tab fx:id="networkTab" text="网络接口" closable="false">
+            <VBox spacing="12" VBox.vgrow="ALWAYS">
+                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="view-toolbar">
+                    <CheckBox fx:id="showVirtualInterfacesCheckBox" text="显示 lo / 虚拟接口"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="networkScopeLabel" text="统计范围：—" styleClass="text-secondary"/>
+                </HBox>
+                <TableView fx:id="networkTable" VBox.vgrow="ALWAYS" minHeight="200" styleClass="monitor-table">
+                    <columns>
+                        <TableColumn fx:id="netNameColumn" text="接口" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="netStateColumn" text="状态" prefWidth="80"/>
+                        <TableColumn fx:id="netRxRateColumn" text="接收速率" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="netTxRateColumn" text="发送速率" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="netRxTotalColumn" text="累计接收" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="netTxTotalColumn" text="累计发送" prefWidth="110" sortable="true"/>
+                        <TableColumn fx:id="netRxPpsColumn" text="接收包/秒" prefWidth="100" sortable="true"/>
+                        <TableColumn fx:id="netTxPpsColumn" text="发送包/秒" prefWidth="100" sortable="true"/>
+                        <TableColumn fx:id="netErrDropColumn" text="错误 / 丢包增量" prefWidth="140"/>
+                    </columns>
+                </TableView>
+                <VBox spacing="5" minHeight="180">
+                    <Label text="流量趋势（选中接口）" styleClass="chart-title"/>
+                    <LineChart fx:id="networkChart" VBox.vgrow="ALWAYS" animated="false" minHeight="160">
+                        <xAxis><NumberAxis fx:id="networkXAxis" label="时间" tickLabelsVisible="false" minorTickVisible="false"/></xAxis>
+                        <yAxis><NumberAxis fx:id="networkYAxis" label="字节/秒" autoRanging="true"/></yAxis>
+                    </LineChart>
+                </VBox>
+                <VBox spacing="6" styleClass="metric-card">
+                    <Label text="接口详情" styleClass="chart-title"/>
+                    <Label fx:id="networkDetailLabel" text="选择接口查看详情" wrapText="true" styleClass="monitor-value"/>
+                </VBox>
+            </VBox>
+        </Tab>
+    </TabPane>
+</VBox>

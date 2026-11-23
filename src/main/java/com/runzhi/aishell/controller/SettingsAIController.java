@@ -95,6 +95,26 @@ public class SettingsAIController {
         defaultConfigLabel.setText(name == null || name.isBlank() ? "未设置" : name);
     }
 
+    /** 偏好值（小写标识）转设置页下拉框显示文本。 */
+    private static String displayOsOf(String os) {
+        return switch (os == null ? "linux" : os) {
+            case "macos" -> "macOS";
+            case "windows" -> "Windows";
+            case "all" -> "Linux";
+            default -> "Linux";
+        };
+    }
+
+    /** Shell 偏好值转设置页下拉框显示文本。 */
+    private static String displayShellOf(String shell) {
+        return switch (shell == null ? "bash" : shell) {
+            case "zsh" -> "Zsh";
+            case "powershell" -> "PowerShell";
+            case "cmd" -> "CMD";
+            default -> "Bash";
+        };
+    }
+
     private void loadSavedProfile(String name) {
         if (name == null || name.isBlank()) return;
         com.runzhi.aishell.ai.AIConfig config = com.runzhi.aishell.ai.AIConfigManager
@@ -140,8 +160,9 @@ public class SettingsAIController {
         contextLengthSpinner.getValueFactory().setValue(5);
         streamingCheck.setSelected(true);
 
-        shellTypeCombo.setValue("Bash");
-        osTypeCombo.setValue("Linux");
+        // 目标系统/Shell 从持久化偏好恢复（此前硬编码为 Linux/Bash，用户的选择没有任何效果——GitHub #9）
+        shellTypeCombo.setValue(displayShellOf(com.runzhi.aishell.agent.AgentOsPreference.currentShell()));
+        osTypeCombo.setValue(displayOsOf(com.runzhi.aishell.agent.AgentOsPreference.current()));
         autoExplainCheck.setSelected(true);
         // 该偏好被 AIAssistantPanelController 消费：开启后，面板执行只读命令前也会弹确认
         safetyConfirmCheck.setSelected(prefs.getBoolean("ai.safetyconfirm", true));
@@ -163,6 +184,9 @@ public class SettingsAIController {
         
         // 只持久化仍被消费的 ai.safetyconfirm；其余字段经由 AIConfig 管理器保存（2026-10-23 审计 AI-14）
         prefs.putBoolean("ai.safetyconfirm", safetyConfirmCheck.isSelected());
+        // 目标系统/Shell：写入共享偏好，Agent 系统提示词与技能库过滤消费它（GitHub #9）
+        com.runzhi.aishell.agent.AgentOsPreference.set(osTypeCombo.getValue());
+        com.runzhi.aishell.agent.AgentOsPreference.setShell(shellTypeCombo.getValue());
 
         com.runzhi.aishell.ai.AIConfig runtimeConfig = new com.runzhi.aishell.ai.AIConfig();
         String profileName = configProfileCombo.getEditor().getText();

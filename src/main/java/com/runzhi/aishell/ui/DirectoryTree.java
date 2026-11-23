@@ -79,6 +79,18 @@ public final class DirectoryTree extends TreeView<String> implements AutoCloseab
             }
         });
     }
+    /** Filter or root changes: expanded nodes re-read with the current loader; collapsed nodes read on next expand. */
+    public void reload() {
+        contexts.values().forEach(this::reload);
+    }
+    private void reload(TreeItem<String> node) {
+        if (node instanceof Directory directory) {
+            directory.loaded = false;
+            if (directory.isExpanded() && !directory.loading) expand(directory);
+        }
+        node.getChildren().forEach(this::reload);
+    }
+
     /** Select a successful destination; never trigger another navigation from synchronization. */
     public void reveal(String path) {
         if(path==null || getRoot()==null) return;
