@@ -43,6 +43,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
+import javafx.concurrent.Task;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
@@ -55,6 +56,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,6 +65,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Objects;
 import java.util.ResourceBundle;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
 
 @Data
@@ -364,7 +367,9 @@ public class MainViewController extends BaseController implements Initializable 
             activeSessionName.setText((params.getUsername() == null ? "" : params.getUsername() + "@")
                     + params.getHost() + ":" + params.getPort());
         }
-        SystemMonitor monitor = sidebarMonitors.computeIfAbsent(tabId, ignored -> new SystemMonitor(connection));
+        // 标签 ID 保持不变，但重连可能替换底层连接。
+        SystemMonitor monitor = sidebarMonitors.compute(tabId, (id, cached) ->
+                cached != null && cached.isBoundTo(connection) ? cached : new SystemMonitor(connection));
         activeSidebarMonitor = monitor;
         monitor.setCallback(metrics -> updateSidebarMetrics(tabId, metrics));
         monitor.startMonitoring();
@@ -1294,8 +1299,9 @@ public class MainViewController extends BaseController implements Initializable 
                     if (sshService instanceof SSHServiceImpl) {
                         controller.setSshService((SSHServiceImpl) sshService);
                     }
-                    // FXML 只初始化一次：每次打开都要重新绑定当前活动会话
-                    controller.bindCurrentSession();
+                    // 连接事件会过期，打开页面时直接读取终端仍然选中的会话。
+                    controller.setSystemMonitorForTab(terminalPanelController == null
+                            ? null : terminalPanelController.getSelectedTabId());
                 });
         setActiveNav(navMonitor);
         setPageContext(I18n.tr("main.monitor"), false);
@@ -1413,9 +1419,10 @@ public class MainViewController extends BaseController implements Initializable 
             return;
         }
         com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
-            com.runzhi.aishell.common.config.ConfigManager.getInstance().saveAppConfig(LAST_UPDATE_CHECK_KEY, today);
             java.util.Optional<UpdateChecker.UpdateInfo> info = UpdateChecker.fetchLatestRelease();
-            if (info.isEmpty() || !UpdateChecker.isNewer(current, info.get().latestVersion())) {
+            if (info.isEmpty()) return;
+            com.runzhi.aishell.common.config.ConfigManager.getInstance().saveAppConfig(LAST_UPDATE_CHECK_KEY, today);
+            if (!UpdateChecker.isNewer(current, info.get().latestVersion())) {
                 return;
             }
             Platform.runLater(() -> showUpdateAvailableDialog(current, info.get()));
@@ -1451,7 +1458,8 @@ public class MainViewController extends BaseController implements Initializable 
         alert.setHeaderText("AIShell " + info.latestVersion() + " 已发布");
         String notes = info.releaseNotes() == null ? "" : info.releaseNotes();
         java.util.Optional<UpdateChecker.ReleaseAsset> asset =
-                AppUpdater.installableAsset(info, currentOsTag());
+                AppUpdater.installableAsset(info, currentOsTag())
+                        .filter(ignored -> AppUpdater.applicationExecutable() != null);
         Label content = new Label("当前版本：" + currentVersion + "\n最新版本：" + info.latestVersion()
                 + (asset.isEmpty() ? "\n（当前平台需手动下载安装）" : "\n安装包：" + asset.get().name())
                 + (notes.isEmpty() ? "" : "\n\n更新内容：\n" + notes));
@@ -1491,35 +1499,50 @@ public class MainViewController extends BaseController implements Initializable 
         progress.getDialogPane().setContent(box);
         UITools.setDialogCSS(progress.getDialogPane());
         progress.getDialogPane().getButtonTypes().add(ButtonType.CANCEL);
-        progress.show();
-        com.runzhi.aishell.common.util.ThreadPoolManager.getInstance().getIoThreadPool().execute(() -> {
-            String name = asset.name();
-            try {
-                java.nio.file.Path downloaded = AppUpdater.download(asset, (downloadedBytes, total) ->
-                        Platform.runLater(() -> {
-                            if (total > 0) {
-                                bar.setProgress(Math.min(1.0, downloadedBytes / (double) total));
-                                status.setText(downloadedBytes / 1024 + " / " + total / 1024 + " KB");
-                            } else {
-                                status.setText(downloadedBytes / 1024 + " KB");
-                            }
-                        }));
-                Platform.runLater(() -> {
-                    progress.close();
-                    confirmInstallAfterExit(downloaded);
+        // 下载刚完成时也可能点击取消，只有一个分支可以接管临时文件。
+        AtomicReference<Path> completed = new AtomicReference<>();
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws Exception {
+                Path downloaded = AppUpdater.download(asset, (bytes, total) -> {
+                    updateProgress(bytes, total);
+                    updateMessage(total > 0 ? bytes / 1024 + " / " + total / 1024 + " KB" : bytes / 1024 + " KB");
                 });
-            } catch (Exception e) {
-                log.warn("下载更新包失败: {}", e.getMessage());
-                Platform.runLater(() -> {
-                    progress.close();
-                    showAlert("下载更新包失败：" + e.getMessage() + "\n可打开发版页面手动下载。");
-                });
+                completed.set(downloaded);
+                if (isCancelled()) {
+                    Path abandoned = completed.getAndSet(null);
+                    if (abandoned != null) AppUpdater.discardDownload(abandoned);
+                }
+                return null;
             }
+        };
+        bar.progressProperty().bind(task.progressProperty());
+        task.messageProperty().addListener((observable, previous, message) -> status.setText(message));
+        progress.setOnHidden(event -> {
+            task.cancel();
+            Path abandoned = completed.getAndSet(null);
+            if (abandoned != null) AppUpdater.discardDownload(abandoned);
         });
+        task.setOnSucceeded(event -> {
+            Path downloaded = completed.getAndSet(null);
+            if (downloaded == null) return;
+            progress.setOnHidden(null);
+            progress.close();
+            confirmInstallAfterExit(downloaded);
+        });
+        task.setOnFailed(event -> {
+            if (!progress.isShowing()) return;
+            progress.setOnHidden(null);
+            progress.close();
+            String message = task.getException().getMessage();
+            log.warn("下载更新包失败: {}", message);
+            showAlert("下载更新包失败：" + message + "\n可打开发版页面手动下载。");
+        });
+        progress.show();
+        Thread.startVirtualThread(task);
     }
 
     /** 下载完成：确认后退出应用，由独立脚本安装新版本并重启。 */
-    private void confirmInstallAfterExit(java.nio.file.Path downloaded) {
+    private void confirmInstallAfterExit(Path downloaded) {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
                 "更新包已下载完成。安装需要退出当前程序，是否立即安装并重启？",
                 ButtonType.OK, ButtonType.CANCEL);
@@ -1527,19 +1550,14 @@ public class MainViewController extends BaseController implements Initializable 
         confirm.setHeaderText("AIShell 即将升级");
         UITools.setDialogCSS(confirm.getDialogPane());
         if (confirm.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
-            try {
-                java.nio.file.Files.deleteIfExists(downloaded);
-            } catch (Exception ignored) {
-                // 临时文件清理失败不影响后续使用
-            }
+            AppUpdater.discardDownload(downloaded);
             return;
         }
         boolean started = AppUpdater.installAfterExit(downloaded, currentOsTag());
         if (started) {
             Platform.exit();
-            System.exit(0);
         } else {
-            showAlert("无法自动安装（仅 Windows MSI 支持自动安装），已保留安装包于临时目录，请手动运行。");
+            showAlert("无法启动自动安装，请手动运行安装包：\n" + downloaded);
         }
     }
 

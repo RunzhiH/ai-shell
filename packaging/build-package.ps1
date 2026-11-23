@@ -12,7 +12,7 @@
 #   构建号取 git 提交数(×2, 工作区有未提交改动时再 +1), 每次打包都唯一递增,
 #   通过 -Drevision 注入 Maven, jar 文件名、应用内“关于”对话框、MSI 三处版本号自动一致。
 #   MSI 只比较版本号前 3 段(第 4 段忽略), 版本递增后双击新包即自动卸载旧版本。
-#   想换大版本号(1.x -> 2.0)时改 pom.xml 的 revision 属性即可, 常规发版无需手动改版本号。
+#   GitHub tag 发版使用 vX.Y.Z 中的版本，提交数只用于普通构建。
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -32,12 +32,19 @@ if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $
     Write-Warning '未找到 git 仓库, 无法计算自动构建号; 版本号不会递增, MSI 覆盖升级需手动处理'
 }
 $AppVer = if ($BuildNo -gt 0) { "$BaseVer.$BuildNo" } else { $PomVer }
+if ($env:GITHUB_REF_TYPE -eq 'tag') {
+    if ($env:GITHUB_REF_NAME -cnotmatch '^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$') {
+        throw 'Release tag must use vX.Y.Z'
+    }
+    $AppVer = $Matches[1]
+}
 $ImageName = 'AIShell'
 $JarName = "$ImageName-$AppVer.jar"
-Write-Host "版本号: $AppVer (基础 $BaseVer + 自动构建号 $BuildNo)"
+Write-Host "版本号: $AppVer"
 
-# 固定 MSI UpgradeCode：所有版本共用这一个，新版本安装时才会自动卸载旧版本
-$UpgradeUuid = 'b7f3a1c8-4d62-4e9b-9a5d-1e7c8f2a3b4d'
+# 固定为 v1.1.0 使用的 jpackage 默认 UpgradeCode（UpgradeCode/runzhi/AIShell）。
+# 保持公开发行包的升级关系，避免后续安装被识别为另一个产品。
+$UpgradeUuid = 'c13599d5-be42-355d-8b4b-265e83b708b4'
 
 # 1. 定位 JDK（jpackage / jlink 都是 JDK 自带的）
 $JdkHome = $env:JAVA_HOME

@@ -5,22 +5,24 @@
 
 package com.runzhi.aishell.agent;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * 内置技能库：从 classpath 资源 agent-skills.json 加载，按操作系统分类提供常用技能。
+ * 合并内置与用户安装的技能，按目标操作系统分类提供给 Agent。
  * <p>
  * 加载失败时退化为空列表：技能是增强项，不得阻断 Agent 主流程。
  */
@@ -28,6 +30,8 @@ import java.util.stream.Stream;
 public final class SkillLibrary {
 
     private static final String RESOURCE = "/agent-skills.json";
+    /** Persistent catalog shared by all Agent tabs. */
+    private static final InstalledSkills INSTALLED = loadInstalled();
 
     private static volatile List<AgentSkill> cached;
 
@@ -35,8 +39,29 @@ public final class SkillLibrary {
         // 工具类，禁止实例化
     }
 
-    /** 全部技能（按资源文件顺序）。 */
+    /** 全部技能，内置技能在前，安装技能按导入顺序排列。 */
     public static List<AgentSkill> all() {
+        return Stream.concat(builtIn().stream(), INSTALLED.all().stream()).toList();
+    }
+
+    /** Imports skill instructions and makes them available across Agent tabs. */
+    public static List<AgentSkill> install(String source) throws IOException {
+        return INSTALLED.install(source, builtIn().stream().map(AgentSkill::name).collect(Collectors.toSet()));
+    }
+
+    private static InstalledSkills loadInstalled() {
+        InstalledSkills installed = new InstalledSkills(Path.of(System.getProperty("user.home"),
+                ".aishell", "skills", "catalog.json"));
+        try {
+            installed.load();
+        } catch (IOException error) {
+            log.warn("无法读取已安装技能: {}", error.getMessage());
+        }
+        return installed;
+    }
+
+    /** Caches only the bundled resource, so installed skills appear immediately. */
+    private static List<AgentSkill> builtIn() {
         List<AgentSkill> snapshot = cached;
         if (snapshot == null) {
             synchronized (SkillLibrary.class) {

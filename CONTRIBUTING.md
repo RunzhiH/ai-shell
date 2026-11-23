@@ -51,6 +51,10 @@
 3. 向 `dev` 发起 Pull Request，等待审查（至少 1 人）并确认 CI 通过
 4. 发版时由维护者从 `dev` 拉 `release/x.y.z`，整理验证后压缩成一个提交推到公开仓库的 `public` 并打 tag
 
+正式发布使用递增的 `vX.Y.Z` tag。将 tag 推送到 GitHub 后，Package 工作流使用 tag 版本构建 Windows MSI、便携 ZIP 和 macOS DMG。三个附件齐备后才创建正式 Release。普通分支推送和手动运行仍可用于预览打包产物。
+
+Windows 正式 MSI 沿用 GitHub `v1.1.0` 的 UpgradeCode。曾安装使用其他 UpgradeCode 的开发 MSI 时，需要先卸载该开发版本，再安装正式版。
+
 ## 代码规范
 
 - 每个 Java 源文件保留版权头与 `SPDX-License-Identifier: GPL-3.0-only`

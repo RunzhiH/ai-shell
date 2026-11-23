@@ -16,7 +16,6 @@
         <HBox alignment="CENTER_LEFT" spacing="4" styleClass="terminal-toolbar" minHeight="44">
             <children>
                 <Button text="%terminal.new" onAction="#createNewTab" styleClass="toolbar-button" mnemonicParsing="false"/>
-                <Button text="%terminal.reconnect" onAction="#attemptReconnection" styleClass="toolbar-button" mnemonicParsing="false"/>
                 <Button text="%terminal.clear" onAction="#clearScreen" styleClass="toolbar-button" mnemonicParsing="false"/>
                 <Button text="%terminal.copy" onAction="#copySelection" styleClass="toolbar-button" mnemonicParsing="false">
                     <tooltip><Tooltip text="%terminal.copy.tip"/></tooltip>
@@ -30,6 +29,7 @@
                         <MenuItem text="%terminal.copy" onAction="#copySelection"/>
                         <MenuItem text="%terminal.paste" onAction="#pasteContent"/>
                         <SeparatorMenuItem/>
+                        <MenuItem text="%terminal.reconnect" onAction="#attemptReconnection"/>
                         <MenuItem text="%terminal.tunnels" onAction="#showPortForwarding"/>
                         <MenuItem text="%terminal.theme" onAction="#changeTheme"/>
                         <MenuItem text="%terminal.settings" onAction="#showSettings"/>

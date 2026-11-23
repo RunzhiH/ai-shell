@@ -24,6 +24,7 @@ module com.runzhi.aishell {
     requires java.desktop;
     requires java.management;
     requires com.google.gson;
+    requires org.yaml.snakeyaml;
     requires org.slf4j;
     requires java.logging;
     requires org.fxmisc.richtext;

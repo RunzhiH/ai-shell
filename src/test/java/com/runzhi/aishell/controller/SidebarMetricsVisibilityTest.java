@@ -1,7 +1,9 @@
 package com.runzhi.aishell.controller;
 
+import com.runzhi.aishell.common.ai.AIShellModuleManager;
 import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.common.util.ThemeManager;
+import com.runzhi.aishell.common.util.ViewSwitcher;
 import com.runzhi.aishell.ssh.SSHConnectionManager;
 import com.runzhi.aishell.ssh.domain.ConnectionParams;
 import com.runzhi.aishell.ssh.impl.SSHServiceImpl;
@@ -48,6 +50,44 @@ class SidebarMetricsVisibilityTest {
         catch (IllegalStateException started) { ready.countDown(); }
         assertTrue(ready.await(10, TimeUnit.SECONDS));
         fx(() -> Platform.setImplicitExit(false));
+    }
+
+    @Test
+    void monitorPageBindsSelectedSshSessionWithoutARecentSelectionEvent() throws Exception {
+        fx(() -> {
+            FXMLLoader loader = loadMainView();
+            MainViewController main = loader.getController();
+            StackPane content = (StackPane) loader.getNamespace().get("contentArea");
+            SelectedTerminal terminal = new SelectedTerminal();
+            terminal.id = "monitor-opening-test";
+            terminal.params = params("monitor.example");
+            SSHServiceImpl service = new SSHServiceImpl();
+            service.getTabConnectionParams().put(terminal.id, terminal.params);
+            service.getTabConnections().put(terminal.id, new TestConnection(terminal.params));
+            set(main, "terminalPanelController", terminal);
+            set(main, "sshService", service);
+            set(main, "viewSwitcher", new ViewSwitcher(content));
+
+            try {
+                main.openMonitor();
+                Label host = (Label) content.lookup("#hostLabel");
+                assertNotNull(host);
+                assertTrue(host.getText().contains("monitor.example"));
+                MonitorPanelController monitor = (MonitorPanelController) AIShellModuleManager.getInstance()
+                        .getNavigationManager().getController("monitor-panel.fxml");
+                TestConnection replacement = new TestConnection(terminal.params);
+                service.getTabConnections().put(terminal.id, replacement);
+                main.openMonitor();
+                assertTrue(monitor.getCurrentSystemMonitor().isBoundTo(replacement));
+
+                terminal.id = null;
+                main.openMonitor();
+                assertNull(monitor.getCurrentSystemMonitor());
+            } finally {
+                terminal.id = null;
+                main.openMonitor();
+            }
+        });
     }
 
     @Test
@@ -396,6 +436,7 @@ class SidebarMetricsVisibilityTest {
             super(params.getHost(), params.getPort(), params.getUsername(), "test-only-password", null);
         }
         @Override public boolean isConnected() { return connected; }
+        @Override public String executeCommand(String command) { return ""; }
         @Override public void disconnect() { connected = false; }
     }
 }

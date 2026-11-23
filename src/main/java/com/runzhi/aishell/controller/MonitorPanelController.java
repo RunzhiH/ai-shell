@@ -272,17 +272,6 @@ public class MonitorPanelController extends BaseController implements Initializa
         }
     }
 
-    /**
-     * 绑定当前活动会话（每次打开监控面板时调用）。
-     */
-    public void bindCurrentSession() {
-        String activeTab = com.runzhi.aishell.common.util.ParameterManager.getInstance()
-                .get("current_active_tab", String.class);
-        if (activeTab != null) {
-            setSystemMonitorForTab(activeTab);
-        }
-    }
-
     @FXML
     public void refreshMonitoring() {
         if (currentSystemMonitor != null) {
@@ -738,7 +727,9 @@ public class MonitorPanelController extends BaseController implements Initializa
         if (sshService != null && tabId != null) {
             SSHConnectionManager connection = sshService.getTabConnection(tabId);
             if (connection != null && connection.isConnected()) {
-                SystemMonitor tabMonitor = tabSystemMonitors.computeIfAbsent(tabId, k -> new SystemMonitor(connection));
+                // 同一标签重连后可能换用新的 SSH 连接实例。
+                SystemMonitor tabMonitor = tabSystemMonitors.compute(tabId, (id, cached) ->
+                        cached != null && cached.isBoundTo(connection) ? cached : new SystemMonitor(connection));
                 if (currentSystemMonitor != null && currentSystemMonitor != tabMonitor) {
                     currentSystemMonitor.stopMonitoring();
                 }

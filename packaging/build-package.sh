@@ -38,10 +38,18 @@ if [ "${BUILD_NO}" -gt 0 ]; then
 else
     APP_VER="${POM_VER}"
 fi
+# GitHub tag 发版的版本与 Windows 和客户端关于页面保持一致。
+if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+    if [[ ! "${GITHUB_REF_NAME:-}" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+        echo 'Release tag must use vX.Y.Z' >&2
+        exit 1
+    fi
+    APP_VER="${BASH_REMATCH[1]}"
+fi
 IMAGE_NAME="AIShell"
 JAR_NAME="${IMAGE_NAME}-${APP_VER}.jar"
 
-echo "AIShell 版本: ${APP_VER} (基础 ${BASE_VER} + 自动构建号 ${BUILD_NO})"
+echo "AIShell 版本: ${APP_VER}"
 
 # 1. 定位 JDK（jpackage / jlink 都是 JDK 自带的）
 JDK_HOME="${JAVA_HOME:-}"

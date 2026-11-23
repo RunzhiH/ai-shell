@@ -18,9 +18,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.function.LongConsumer;
@@ -55,8 +59,7 @@ public final class AppUpdater {
     /**
      * 按操作系统挑选可直接安装的发行附件。
      * <p>
-     * Windows 取 .msi（优先文件名带 AIShell 的），macOS 取 .dmg；
-     * 便携 zip、源码包与其他平台一律不选。
+     * Windows 取 .msi（优先文件名带 AIShell 的），其他平台打开发布页。
      *
      * @param info         更新检查结果
      * @param os           目标系统标识：windows / macos / linux（小写）
@@ -67,7 +70,6 @@ public final class AppUpdater {
         }
         String extension = switch (os == null ? "" : os.toLowerCase(java.util.Locale.ROOT)) {
             case "windows" -> ".msi";
-            case "macos" -> ".dmg";
             default -> null;
         };
         if (extension == null) {
@@ -96,9 +98,6 @@ public final class AppUpdater {
      */
     public static Path download(UpdateChecker.ReleaseAsset asset, ProgressListener listener)
             throws IOException, InterruptedException {
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(20))
-                .build();
         HttpRequest request = HttpRequest.newBuilder(URI.create(asset.url()))
                 .timeout(Duration.ofMinutes(30))
                 .header("User-Agent", "AIShell-Updater")
@@ -107,16 +106,61 @@ public final class AppUpdater {
         Path target = Files.createTempDirectory("aishell-update")
                 .resolve(safeFileName(asset.name(), asset.url()));
         HttpResponse.BodyHandler<Path> handler = responseInfo -> {
+            if (responseInfo.statusCode() != 200) {
+                return HttpResponse.BodySubscribers.replacing(null);
+            }
             long contentLength = responseInfo.headers().firstValueAsLong("Content-Length").orElse(-1L);
             BodySubscriber<Path> fileSubscriber = HttpResponse.BodySubscribers.ofFile(target);
-            return new ProgressSubscriber(fileSubscriber, contentLength, listener, target);
+            return new ProgressSubscriber(fileSubscriber, contentLength, listener);
         };
-        client.send(request, handler);
-        if (Files.size(target) == 0) {
-            throw new IOException("下载内容为空: " + asset.url());
+        boolean verified = false;
+        try (HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(20))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build()) {
+            var response = client.send(request, handler);
+            if (response.statusCode() != 200) throw new IOException("下载更新包失败，HTTP " + response.statusCode());
+            verifyDownload(target, asset);
+            verified = true;
+            log.info("更新包已下载并验证: {}", target);
+            return target;
+        } finally {
+            if (!verified) discardDownload(target);
         }
-        log.info("更新包已下载: {} ({} 字节)", target, Files.size(target));
-        return target;
+    }
+
+    /** 校验附件大小、MSI 容器头和 GitHub 提供的 SHA-256。 */
+    private static void verifyDownload(Path target, UpdateChecker.ReleaseAsset asset)
+            throws IOException, InterruptedException {
+        long size = Files.size(target);
+        if (size == 0 || (asset.size() > 0 && size != asset.size())) {
+            throw new IOException("安装包大小与发布信息不一致");
+        }
+        try (var stream = Files.newInputStream(target);
+             var input = new DigestInputStream(stream, MessageDigest.getInstance("SHA-256"))) {
+            String signature = HexFormat.of().formatHex(input.readNBytes(8));
+            if (!"d0cf11e0a1b11ae1".equals(signature)) throw new IOException("下载内容不是有效的 MSI 容器");
+            if (asset.digest() != null && !asset.digest().isBlank()) {
+                byte[] buffer = new byte[64 * 1024];
+                while (input.read(buffer) != -1) {
+                    if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+                }
+                String actual = "sha256:" + HexFormat.of().formatHex(input.getMessageDigest().digest());
+                if (!actual.equalsIgnoreCase(asset.digest())) throw new IOException("安装包 SHA-256 校验失败");
+            }
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IOException("无法验证安装包 SHA-256", impossible);
+        }
+    }
+
+    /** 清理下载方法创建的文件和空临时目录。 */
+    public static void discardDownload(Path downloaded) {
+        try {
+            Files.deleteIfExists(downloaded);
+            Files.deleteIfExists(downloaded.getParent());
+        } catch (IOException failure) {
+            log.debug("清理更新包失败: {}", failure.getMessage());
+        }
     }
 
     /** URL 末段自带扩展名时优先使用，防止附件名缺失；去掉非法路径字符。 */
@@ -126,7 +170,8 @@ public final class AppUpdater {
         if (slash >= 0 && slash < candidate.length() - 1) {
             candidate = candidate.substring(slash + 1);
         }
-        return candidate.replaceAll("[^A-Za-z0-9._-]", "_");
+        String safe = candidate.replaceAll("[^A-Za-z0-9._-]", "_");
+        return safe.endsWith(".msi") && safe.length() > 4 ? safe : "AIShell-update.msi";
     }
 
     /**
@@ -140,11 +185,22 @@ public final class AppUpdater {
         try {
             String platform = os == null ? "" : os.toLowerCase(java.util.Locale.ROOT);
             if ("windows".equals(platform)) {
-                Path script = writeWindowsScript(downloaded);
-                new ProcessBuilder("cmd", "/c", "start", "", script.toString())
-                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                Path executable = applicationExecutable();
+                if (executable == null) return false;
+                Path script = writeWindowsScript(downloaded, executable);
+                Process process = new ProcessBuilder("cmd", "/d", "/v:off", "/c", script.getFileName().toString())
+                        .directory(script.getParent().toFile())
+                        .redirectErrorStream(true)
+                        .redirectOutput(script.resolveSibling("install-update.log").toFile())
                         .start();
+                // 脚本正常启动后会等待当前 PID，提前退出表示启动失败。
+                try {
+                    if (process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) return false;
+                } catch (InterruptedException interrupted) {
+                    process.destroy();
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
                 log.info("更新脚本已启动，本进程退出后安装: {}", script);
                 return true;
             }
@@ -161,36 +217,42 @@ public final class AppUpdater {
         String quote = String.valueOf('"');   // cmd 引号，用字符字面量避免 Java 转义混杂
         List<String> lines = new ArrayList<>();
         lines.add("@echo off");
+        lines.add("setlocal DisableDelayedExpansion");
         lines.add("chcp 65001 >nul");
         lines.add("title AIShell 更新安装");
         lines.add("echo AIShell 更新已就绪，等待程序退出后开始安装...");
         lines.add(":wait");
         lines.add("tasklist /fi " + quote + "PID eq " + pid + quote + " 2>nul | find " + pid + " >nul");
         lines.add("if not errorlevel 1 (");
-        lines.add("    timeout /t 1 /nobreak >nul");
+        lines.add("    ping -n 2 127.0.0.1 >nul");
         lines.add("    goto wait");
         lines.add(")");
         lines.add("echo 正在安装，请稍候（MSI 升级窗口可能一闪而过）...");
-        lines.add("msiexec /i " + quote + msi.toAbsolutePath() + quote + " /qb");
-        lines.add("if errorlevel 1 (");
-        lines.add("    echo 安装失败（可能被取消），已打开安装包，请手动完成。");
-        lines.add("    start " + quote + quote + " " + quote + msi.toAbsolutePath() + quote);
-        lines.add("    timeout /t 20 >nul");
-        lines.add("    exit /b 1");
+        String installer = msi.toAbsolutePath().toString().replace("%", "%%");
+        String installLog = installer + ".log";
+        lines.add("msiexec /i " + quote + installer + quote + " /qb /norestart /L*v " + quote + installLog + quote);
+        lines.add("set \"installResult=%errorlevel%\"");
+        lines.add("if \"%installResult%\"==\"1641\" exit /b 0");
+        lines.add("if \"%installResult%\"==\"3010\" (");
+        lines.add("    echo 安装完成，请重启 Windows 以完成更新。");
+        lines.add("    exit /b 0");
+        lines.add(")");
+        lines.add("if not \"%installResult%\"==\"0\" (");
+        lines.add("    echo 安装未完成，返回码 %installResult%。日志：" + quote + installLog + quote);
+        lines.add("    exit /b %installResult%");
         lines.add(")");
         lines.add("echo 安装完成，正在重新启动 AIShell。");
-        lines.add("timeout /t 2 >nul");
         if (exe != null) {
-            lines.add("start " + quote + quote + " " + quote + exe.toAbsolutePath() + quote);
+            lines.add("start " + quote + quote + " " + quote + exe.toAbsolutePath().toString().replace("%", "%%") + quote);
         }
         return lines;
     }
 
-    private static Path writeWindowsScript(Path msi) throws IOException {
-        Path script = Files.createTempFile("aishell-update", ".cmd");
-        List<String> lines = buildWindowsUpdateScript(ProcessHandle.current().pid(), msi, applicationExecutable());
+    private static Path writeWindowsScript(Path msi, Path executable) throws IOException {
+        Path script = msi.resolveSibling("install-update.cmd");
+        List<String> lines = buildWindowsUpdateScript(ProcessHandle.current().pid(), msi, executable);
         Files.write(script, lines, java.nio.charset.StandardCharsets.UTF_8,
-                StandardOpenOption.TRUNCATE_EXISTING);
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         return script;
     }
 
@@ -199,7 +261,7 @@ public final class AppUpdater {
      * 打包后 jar 位于 <app-image>/app/*.jar（macOS 为 AIShell.app/Contents/app/*.jar），
      * app-image 根目录即 exe 所在；IDE 直跑时返回 null（不支持自更新）。
      */
-    static Path applicationExecutable() {
+    public static Path applicationExecutable() {
         try {
             String location = AppUpdater.class.getProtectionDomain().getCodeSource()
                     .getLocation().toURI().getSchemeSpecificPart();
@@ -228,14 +290,12 @@ public final class AppUpdater {
         private final BodySubscriber<Path> delegate;
         private final long total;
         private final ProgressListener listener;
-        private final Path target;
         private long downloaded;
 
-        private ProgressSubscriber(BodySubscriber<Path> delegate, long total, ProgressListener listener, Path target) {
+        private ProgressSubscriber(BodySubscriber<Path> delegate, long total, ProgressListener listener) {
             this.delegate = delegate;
             this.total = total;
             this.listener = listener;
-            this.target = target;
         }
 
         @Override
@@ -267,11 +327,6 @@ public final class AppUpdater {
 
         @Override
         public void onError(Throwable throwable) {
-            try {
-                Files.deleteIfExists(target);
-            } catch (IOException ignored) {
-                // 清理失败不影响报错
-            }
             delegate.onError(throwable);
         }
 

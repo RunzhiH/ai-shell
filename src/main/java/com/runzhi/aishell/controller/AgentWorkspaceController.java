@@ -68,14 +68,16 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
                 new AgentConsoleView.Command("/stop", I18n.tr("agent.cli.stop")),
                 new AgentConsoleView.Command("/clear", I18n.tr("agent.cli.clear")),
                 new AgentConsoleView.Command("/skills", I18n.tr("agent.cli.skills")),
-                new AgentConsoleView.Command("/skill", I18n.tr("agent.cli.skill")));
+                new AgentConsoleView.Command("/skill", I18n.tr("agent.cli.skill")),
+                new AgentConsoleView.Command("/skill-install", I18n.tr("agent.cli.skillInstall")));
     }
 
     /** Help and completion share the same catalog, including the command itself. */
     private String commandHelp() {
         Map<String,String> arguments = Map.of("/new", " [name]", "/resume", " N", "/model", " [N|profile]",
                 "/auto", " on|off", "/rename", " <title>", "/delete", "", "/clear-history", "",
-                "/skills", " [linux|macos|windows|all]", "/skill", " <name>");
+                "/skills", " [linux|macos|windows|all]", "/skill", " <name>",
+                "/skill-install", " <directory|GitHub URL>");
         StringBuilder result = new StringBuilder(I18n.tr("agent.cli.commands"));
         for (AgentConsoleView.Command command : commands()) result.append("\r\n  ")
                 .append(String.format("%-20s %s", command.name() + arguments.getOrDefault(command.name(), ""), command.description()));
@@ -168,14 +170,14 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
 
     private void handleLine(String line) {
         if (disposed) return;
-        Tab tab = activeTab();
-        if (tab == null || tab.getId() == null) { status(I18n.tr("agent.workspace.noConnectedTab")); return; }
         // 所有 / 命令都是 Agent 本地行为，必须在待回答问题之前处理；
         // 否则工具提问期间输入 /help、/tasks 等会被当成回答直接发送给大模型。
         if (line.stripLeading().startsWith("/")) {
             handleCommand(line);
             return;
         }
+        Tab tab = activeTab();
+        if (tab == null || tab.getId() == null) { status(I18n.tr("agent.workspace.noConnectedTab")); return; }
         AgentActivityBus.Event question = pendingQuestions.get(tab.getId());
         if (question != null && question.answerHandler() != null) {
             String answer = resolveAnswer(question, line);
@@ -238,6 +240,10 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
         String argument = parts.length == 2 ? parts[1].trim() : "";
         Tab tab = activeTab();
         String sessionId = tab == null ? null : tab.getId();
+        if (sessionId == null && !List.of("/help", "/skills", "/skill-install").contains(command)) {
+            status(I18n.tr("agent.workspace.noConnectedTab"));
+            return;
+        }
         switch (command) {
             case "/help" -> status(commandHelp());
             case "/new" -> { if (!rejectRunning(I18n.tr("agent.workspace.operationNew"), sessionId)) newTask(argument); }
@@ -255,11 +261,12 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
             case "/clear" -> clearCurrent();
             case "/skills" -> status(skillList(argument));
             case "/skill" -> applySkill(tab, argument);
+            case "/skill-install" -> installSkill(argument);
             default -> error(I18n.tr("agent.workspace.unknownCommand", command));
         }
     }
 
-    /** /skills [os]：列出该操作系统可用的内置技能；不带参数时按当前选中的目标系统过滤。 */
+    /** /skills [os]：列出该操作系统可用的技能；不带参数时使用当前目标系统。 */
     private String skillList(String osArgument) {
         String os = osArgument.isBlank() ? AgentOsPreference.current()
                 : osArgument.trim().toLowerCase(Locale.ROOT);
@@ -297,6 +304,23 @@ public class AgentWorkspaceController implements com.runzhi.aishell.common.util.
             console.prepareGoal(skill.get().prompt());
         }
         status(I18n.tr("agent.skill.applied", skill.get().name()));
+    }
+
+    /** Runs disk and network imports off the JavaFX thread. */
+    private void installSkill(String source) {
+        if (source.isBlank()) {
+            status(I18n.tr("agent.skill.installUsage"));
+            return;
+        }
+        status(I18n.tr("agent.skill.installing"));
+        Thread.startVirtualThread(() -> {
+            try {
+                List<String> names = SkillLibrary.install(source).stream().map(AgentSkill::name).toList();
+                Platform.runLater(() -> status(I18n.tr("agent.skill.installed", String.join(", ", names))));
+            } catch (IOException | IllegalArgumentException failure) {
+                Platform.runLater(() -> error(I18n.tr("agent.skill.installFailed", failure.getMessage())));
+            }
+        });
     }
 
     private boolean rejectRunning(String operation, String sessionId) {

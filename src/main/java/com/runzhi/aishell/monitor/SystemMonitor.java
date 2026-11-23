@@ -55,6 +55,12 @@ public class SystemMonitor {
         this.dataSourceProvider = dataSourceProvider;
     }
 
+    /** 判断采样器是否仍绑定同一个 SSH 连接实例。 */
+    public boolean isBoundTo(SSHConnectionManager connection) {
+        return dataSourceProvider instanceof SSHConnectionManagerAdapter adapter
+                && adapter.connectionManager == connection;
+    }
+
     public synchronized void startMonitoring() {
         if (session != null && !session.isPausedOrStopped()) {
             return;

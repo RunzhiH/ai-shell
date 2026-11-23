@@ -2,6 +2,7 @@ package com.runzhi.aishell.controller;
 
 import com.runzhi.aishell.common.i18n.I18n;
 import com.runzhi.aishell.common.manager.NavigationManager;
+import com.runzhi.aishell.service.impl.TerminalUIServiceImpl;
 import com.runzhi.aishell.ssh.SSHConnectionManager;
 import com.runzhi.aishell.ssh.SSHService;
 import com.runzhi.aishell.ssh.domain.ConnectionParams;
@@ -17,6 +18,7 @@ import javafx.scene.control.TabPane;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.BeforeAll;
@@ -37,6 +39,34 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** File entry/target regressions: idempotent open, fixed standalone target, remote states, Agent header. */
 class FileEntryWorkflowTest {
+
+    @Test
+    void openFilesUseSideBySideLayoutWhenTheTerminalHasRoom() throws Exception {
+        fx(() -> {
+            VBox content = (VBox) new TerminalUIServiceImpl()
+                    .createTerminalAndFileManagerViewForTab("file-area-layout-test");
+            BorderPane workspace = (BorderPane) content.getChildren().getFirst();
+            VBox files = (VBox) workspace.getBottom();
+            VBox body = (VBox) files.getChildren().getLast();
+
+            content.resize(1000, 600);
+            assertSame(files, workspace.getBottom(), "收起时终端应保留完整宽度");
+            body.setManaged(true);
+            assertSame(files, workspace.getLeft());
+            assertNull(workspace.getBottom());
+            assertFalse(body.maxHeightProperty().isBound());
+
+            content.resize(700, 600);
+            assertNull(workspace.getLeft());
+            assertSame(files, workspace.getBottom());
+            assertTrue(body.maxHeightProperty().isBound());
+
+            content.resize(1000, 600);
+            body.setManaged(false);
+            assertNull(workspace.getLeft());
+            assertSame(files, workspace.getBottom());
+        });
+    }
 
     @Test
     void separateFileWindowsKeepBothTargetsAndReleaseTheirControllers() throws Exception {

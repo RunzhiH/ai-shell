@@ -64,7 +64,8 @@ class AgentWorkspaceLocalizationTest {
     @Test @SuppressWarnings("unchecked") void catalogAndHelpTranslateWithoutChangingSlashCommandNames() throws Exception {
         fx(() -> {
             List<AgentConsoleView.Command> commands=(List<AgentConsoleView.Command>)call("commands",new Class<?>[0]);
-            assertEquals(List.of("/help","/new","/tasks","/resume","/continue","/rename","/delete","/clear-history","/model","/context","/permissions","/auto","/stop","/clear"),
+            assertEquals(List.of("/help","/new","/tasks","/resume","/continue","/rename","/delete","/clear-history",
+                            "/model","/context","/permissions","/auto","/stop","/clear","/skills","/skill","/skill-install"),
                     commands.stream().map(AgentConsoleView.Command::name).toList());
             String help=(String)call("commandHelp",new Class<?>[0]);
             for(var command:commands) assertTrue(help.contains(command.name()) && help.contains(command.description()));

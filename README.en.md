@@ -49,6 +49,8 @@ Guarded Agent
 - Read-only tools from a whitelist, pinned to one target tab
 - Every write operation needs approval; batch jobs spell out their impact per host
 - Audit log is masked automatically
+- In the Agent panel, run `/skill-install "/path/to/my skill"` to import the directory's `SKILL.md`, or `/skill-install https://github.com/OWNER/REPO` to import skill documents from a public repository's default branch.
+- Installed skills persist locally. Run `/skills all` to browse them and `/skill <name>` to load instructions into the Agent input. Set `metadata.os` in the YAML frontmatter to `linux`, `macos`, or `windows` to classify a skill. Skills without that field appear for every OS. Installation imports Markdown instructions only.
 
 Connectivity
 

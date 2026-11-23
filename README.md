@@ -49,6 +49,8 @@ AI 助手
 - 只能调白名单里的只读工具，绑死在目标标签上
 - 写操作逐个审批，批量操作会逐台主机列影响范围
 - 审计日志自动脱敏
+- 在 Agent 面板运行 `/skill-install "C:\My Skills\example"`，可导入本地目录中的 `SKILL.md`。运行 `/skill-install https://github.com/OWNER/REPO`，可批量导入公开仓库默认分支中的 `SKILL.md`。
+- 安装的技能保存在本机。用 `/skills all` 查看完整列表，用 `/skill <名称>` 将指令填入 Agent 输入框。需要指定分类时，可在 `SKILL.md` 的 YAML 元数据里设置 `metadata.os` 为 `linux`、`macos` 或 `windows`，省略时适用于所有系统。安装范围为 Markdown 指令，技能附带的脚本和资源文件需另行处理。
 
 内置与外部编辑器
 

@@ -13,10 +13,15 @@ import com.runzhi.aishell.service.TerminalTabService;
 import com.runzhi.aishell.service.TerminalUIService;
 import com.runzhi.aishell.common.i18n.I18n;
 import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
+import javafx.beans.property.DoubleProperty;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import lombok.extern.slf4j.Slf4j;
 import org.fxmisc.richtext.InlineCssTextArea;
@@ -37,6 +42,8 @@ public class TerminalUIServiceImpl implements TerminalUIService {
     private static final double MIN_DRAWER_HEIGHT = 180;
     /** 最大占窗口高度比例（文档 §12：最大 60%） */
     private static final double MAX_DRAWER_RATIO = 0.6;
+    /** 给终端与文件区分别留出约 550 和 300 像素后才切换到并排布局。 */
+    private static final double SIDE_BY_SIDE_MIN_WIDTH = 850;
 
     private MonitorPanelController monitorPanelController;
     private FileManagerPanelController fileManagerPanelController;
@@ -238,8 +245,7 @@ public class TerminalUIServiceImpl implements TerminalUIService {
         }
         
         try {
-            // 【SFTP Drawer 化】文件管理器不再是永久分栏，而是底部可折叠抽屉：
-            // 默认收起，终端获得完整高度；点击抽屉头展开，高度可拖动并记忆。
+            // 文件区默认收起，展开后按当前标签的可用宽度布局。
             VBox container = new VBox();
             container.getStyleClass().add("terminal-drawer-container");
 
@@ -256,7 +262,6 @@ public class TerminalUIServiceImpl implements TerminalUIService {
             VBox terminalBox = new VBox();
             terminalBox.getChildren().add(terminalTabContent);
             VBox.setVgrow(terminalTabContent, javafx.scene.layout.Priority.ALWAYS);
-            VBox.setVgrow(terminalBox, javafx.scene.layout.Priority.ALWAYS);
             log.info("Created terminal box for tab: {}", tabId);
 
             // 文件管理器部分 - 动态加载
@@ -299,14 +304,9 @@ public class TerminalUIServiceImpl implements TerminalUIService {
             if (fileManagerController != null) {
                 fileManagerController.setPanelVisible(false);
             }
-            if (fileManagerController != null) {
-                fileManagerController.setPanelVisible(false);
-            }
             // 展开高度记忆（每 Tab 独立）
             javafx.beans.property.SimpleDoubleProperty drawerHeight =
                     new javafx.beans.property.SimpleDoubleProperty(loadDrawerHeight(tabId));
-            fileManagerBox.minHeightProperty().bind(drawerHeight);
-            fileManagerBox.maxHeightProperty().bind(drawerHeight);
             log.info("Created file manager drawer box for tab: {}", tabId);
 
             // 抽屉头：显示可读会话目标与展开状态；点击切换展开/收起
@@ -339,7 +339,7 @@ public class TerminalUIServiceImpl implements TerminalUIService {
                 }
                 saveDrawerHeight(tabId, drawerHeight.get());
             });
-            // 双击抽屉头重置为默认高度
+            // 缩放手势结束时重置底部抽屉高度
             drawerHeader.setOnZoomFinished(e -> drawerHeight.set(DEFAULT_DRAWER_HEIGHT));
 
             // 拖动抽屉头边缘调整高度（拖住抽屉头上下移动）
@@ -350,6 +350,7 @@ public class TerminalUIServiceImpl implements TerminalUIService {
                 dragStartHeight[0] = drawerHeight.get();
             });
             drawerHeader.setOnMouseDragged(e -> {
+                if (container.getWidth() >= SIDE_BY_SIDE_MIN_WIDTH) return;
                 double delta = dragStart[0] - e.getScreenY(); // 向上拖增大
                 double h = Math.min(MAX_DRAWER_RATIO * container.getHeight(),
                         Math.max(MIN_DRAWER_HEIGHT, dragStartHeight[0] + delta));
@@ -357,7 +358,7 @@ public class TerminalUIServiceImpl implements TerminalUIService {
             });
             drawerHeader.setOnMouseReleased(e -> saveDrawerHeight(tabId, drawerHeight.get()));
 
-            container.getChildren().addAll(terminalBox, drawerHeader, fileManagerBox);
+            installFileAreaLayout(container, terminalBox, drawerHeader, fileManagerBox, drawerHeight);
 
             log.info("Successfully created drawer view for tab: {}", tabId);
             return container;
@@ -382,6 +383,49 @@ public class TerminalUIServiceImpl implements TerminalUIService {
                 log.error("创建终端界面备用方案失败", ex);
                 return new VBox(); // 返回空容器
             }
+        }
+    }
+
+    /** 在同一标签内切换文件区位置，保留文件控制器和当前会话。 */
+    private void installFileAreaLayout(VBox container, VBox terminalBox, Label header, VBox body,
+                                       DoubleProperty drawerHeight) {
+        BorderPane workspace = new BorderPane(terminalBox);
+        VBox files = new VBox(header, body);
+        VBox.setVgrow(body, Priority.ALWAYS);
+        VBox.setVgrow(workspace, Priority.ALWAYS);
+        container.getChildren().add(workspace);
+
+        workspace.setBottom(files);
+        body.minHeightProperty().bind(drawerHeight);
+        body.maxHeightProperty().bind(drawerHeight);
+        InvalidationListener updatePlacement = observable -> {
+            boolean sideBySide = body.isManaged() && container.getWidth() >= SIDE_BY_SIDE_MIN_WIDTH;
+            if (sideBySide == (workspace.getLeft() == files)) return;
+            placeFileArea(workspace, files, body, drawerHeight, sideBySide);
+        };
+        container.widthProperty().addListener(updatePlacement);
+        body.managedProperty().addListener(updatePlacement);
+    }
+
+    /** 并排时解除抽屉高度约束，返回底部时恢复之前的高度。 */
+    private void placeFileArea(BorderPane workspace, VBox files, VBox body,
+                               DoubleProperty drawerHeight, boolean sideBySide) {
+        if (sideBySide) {
+            workspace.setBottom(null);
+            body.minHeightProperty().unbind();
+            body.maxHeightProperty().unbind();
+            body.setMinHeight(0);
+            body.setMaxHeight(Double.MAX_VALUE);
+            files.setMinWidth(0);
+            files.setPrefWidth(300);
+            workspace.setLeft(files);
+        } else {
+            workspace.setLeft(null);
+            body.minHeightProperty().bind(drawerHeight);
+            body.maxHeightProperty().bind(drawerHeight);
+            files.setMinWidth(Region.USE_COMPUTED_SIZE);
+            files.setPrefWidth(Region.USE_COMPUTED_SIZE);
+            workspace.setBottom(files);
         }
     }
 

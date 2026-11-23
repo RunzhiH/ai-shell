@@ -43,7 +43,10 @@ public final class UpdateChecker {
     }
 
     /** 一个发行附件（安装包），供自更新下载。 */
-    public record ReleaseAsset(String name, String url, long size) {
+    public record ReleaseAsset(String name, String url, long size, String digest) {
+        public ReleaseAsset(String name, String url, long size) {
+            this(name, url, size, null);
+        }
     }
 
     /** 一次更新检查的结果。 */
@@ -57,10 +60,7 @@ public final class UpdateChecker {
      * @return 最新版本信息；网络错误、非 200 或解析失败时返回 Optional.empty()
      */
     public static Optional<UpdateInfo> fetchLatestRelease() {
-        try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
+        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
             HttpRequest request = HttpRequest.newBuilder(URI.create(LATEST_RELEASE_API))
                     .timeout(Duration.ofSeconds(15))
                     .header("Accept", "application/vnd.github+json")
@@ -72,11 +72,10 @@ public final class UpdateChecker {
                 log.debug("查询更新返回非 200 状态: {}", response.statusCode());
                 return Optional.empty();
             }
-            if (response.statusCode() != 200) {
-                log.debug("查询更新返回非 200 状态: {}", response.statusCode());
-                return Optional.empty();
-            }
             return parseReleaseJson(response.body());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
         } catch (Exception e) {
             log.debug("更新检查失败（视为无新版本）: {}", e.getMessage());
             return Optional.empty();
@@ -107,8 +106,10 @@ public final class UpdateChecker {
                                     ? item.get("browser_download_url").getAsString() : "";
                     long size = item.has("size") && !item.get("size").isJsonNull()
                             ? item.get("size").getAsLong() : 0L;
+                    String digest = item.has("digest") && !item.get("digest").isJsonNull()
+                            ? item.get("digest").getAsString() : null;
                     if (!name.isBlank() && !assetUrl.isBlank()) {
-                        assets.add(new ReleaseAsset(name, assetUrl, size));
+                        assets.add(new ReleaseAsset(name, assetUrl, size, digest));
                     }
                 }
             }
